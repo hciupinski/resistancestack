@@ -1,0 +1,39 @@
+project_name: "myapp"
+server:
+  host: "1.2.3.4"
+  ssh_user: "deployer"
+  ssh_port: 22
+  private_key_path: "~/.ssh/id_ed25519"
+  host_key_checking: "strict"
+  known_hosts_path: "~/.ssh/known_hosts"
+domain:
+  fqdn: "app.example.com"
+app:
+  healthcheck_url: "http://127.0.0.1:8080/health"
+  compose_file: "./docker-compose.app.yml"
+  env_file: "./.env.app"
+  upstream_url: "http://127.0.0.1:8080"
+tls:
+  enabled: true
+  email: "admin@example.com"
+  staging: false
+security:
+  profile: "balanced"
+  admin_allowlist:
+    - "203.0.113.10/32"
+alerts:
+  enabled: true
+  webhook_url: "https://hooks.example.com/incident"
+  thresholds:
+    ssh_fail_5m: 100
+    bans_per_hour: 20
+    probe_per_hour: 150
+    upstream_5m: 10
+dashboard:
+  path: "/_resistack/status/"
+  basic_auth:
+    enabled: true
+    username: "resistack"
+    password: "change-me-now"
+ci:
+  github_actions: true
