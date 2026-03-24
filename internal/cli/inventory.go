@@ -7,8 +7,8 @@ import (
 	"github.com/hciupinski/resistancestack/internal/stack"
 )
 
-func runStatus(args []string, out io.Writer, errOut io.Writer) error {
-	fs := newFlagSet("status")
+func runInventory(args []string, out io.Writer, errOut io.Writer) error {
+	fs := newFlagSet("inventory")
 	configPath := fs.String("config", defaultConfigPath, "Path to configuration file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -21,5 +21,6 @@ func runStatus(args []string, out io.Writer, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return stack.Status(cfg, wd, out)
+	_, err = stack.Inventory(cfg, wd, out)
+	return err
 }

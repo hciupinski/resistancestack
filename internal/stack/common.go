@@ -1,25 +1,21 @@
 package stack
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/remote"
 )
 
-type LocalArtifacts struct {
-	ComposePath string
-	ComposeRaw  []byte
-	EnvPath     string
-	EnvRaw      []byte
-}
+type Module string
+
+const (
+	ModuleHostHardening         Module = "host-hardening"
+	ModuleSecurityObservability Module = "security-observability"
+	ModuleCISecurity            Module = "ci-security"
+	ModuleInventoryAudit        Module = "inventory-audit"
+)
 
 func newTarget(cfg config.Config) remote.Target {
 	return remote.Target{
@@ -30,37 +26,6 @@ func newTarget(cfg config.Config) remote.Target {
 		HostKeyChecking: cfg.Server.HostKeyChecking,
 		KnownHostsPath:  cfg.Server.KnownHostsPath,
 	}
-}
-
-func resolveArtifacts(cfg config.Config, wd string) (LocalArtifacts, error) {
-	composePath := cfg.App.ComposeFile
-	if !filepath.IsAbs(composePath) {
-		composePath = filepath.Join(wd, composePath)
-	}
-	composeRaw, err := os.ReadFile(composePath)
-	if err != nil {
-		return LocalArtifacts{}, fmt.Errorf("read compose file: %w", err)
-	}
-
-	artifacts := LocalArtifacts{
-		ComposePath: composePath,
-		ComposeRaw:  composeRaw,
-	}
-
-	if envFile := strings.TrimSpace(cfg.App.EnvFile); envFile != "" {
-		envPath := envFile
-		if !filepath.IsAbs(envPath) {
-			envPath = filepath.Join(wd, envPath)
-		}
-		envRaw, err := os.ReadFile(envPath)
-		if err != nil {
-			return LocalArtifacts{}, fmt.Errorf("read env file: %w", err)
-		}
-		artifacts.EnvPath = envPath
-		artifacts.EnvRaw = envRaw
-	}
-
-	return artifacts, nil
 }
 
 func printWarnings(out io.Writer, warnings []string) {
@@ -75,28 +40,19 @@ func printErrors(out io.Writer, prefix string, errs []error) {
 	}
 }
 
-func newReleaseID() string {
-	return time.Now().UTC().Format("20060102150405")
-}
-
-func generateSecret() (string, error) {
-	raw := make([]byte, 24)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("generate secret: %w", err)
+func parseModules(values []string) ([]Module, error) {
+	if len(values) == 0 {
+		return []Module{ModuleHostHardening, ModuleSecurityObservability, ModuleCISecurity, ModuleInventoryAudit}, nil
 	}
-	return base64.RawURLEncoding.EncodeToString(raw), nil
-}
-
-func shellQuote(v string) string {
-	if v == "" {
-		return "''"
+	modules := make([]Module, 0, len(values))
+	for _, value := range values {
+		module := Module(value)
+		switch module {
+		case ModuleHostHardening, ModuleSecurityObservability, ModuleCISecurity, ModuleInventoryAudit:
+			modules = append(modules, module)
+		default:
+			return nil, fmt.Errorf("unknown module %q", value)
+		}
 	}
-	return "'" + strings.ReplaceAll(v, "'", `'"'"'`) + "'"
-}
-
-func boolString(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
+	return modules, nil
 }

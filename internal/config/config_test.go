@@ -1,0 +1,106 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoad_NewV2Config(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "resistack.yaml")
+	raw := `project_name: demo
+mode:
+  strategy: audit_then_apply
+server:
+  host: 1.2.3.4
+  ssh_user: deployer
+  ssh_port: 22
+  private_key_path: ~/.ssh/id_ed25519
+  host_key_checking: strict
+  known_hosts_path: ~/.ssh/known_hosts
+host_hardening:
+  enabled: true
+  ssh_hardening:
+    disable_root_login: true
+    disable_password_auth: true
+    max_auth_tries: 4
+    login_grace_time_seconds: 30
+    guard_current_operator: true
+    require_passwordless_sudo: true
+  ufw_policy:
+    enabled: true
+    default_incoming: deny
+    default_outgoing: allow
+    allowed_tcp_ports: [22, 80, 443]
+    admin_allowlist: ["203.0.113.10/32"]
+  fail2ban:
+    enabled: true
+    ban_time: 1h
+    find_time: 10m
+    max_retry: 5
+    recidive_enabled: true
+    recidive_ban_time: 24h
+  automatic_security_updates: true
+  check_deploy_user: true
+  check_docker_daemon: true
+  backup_dir: /var/lib/resistack/backups/host
+app_inventory:
+  compose_paths: [docker-compose.yml]
+  nginx_paths: [/etc/nginx/sites-enabled]
+  systemd_units: [nginx]
+  domains: [app.example.com]
+  healthcheck_urls: [http://127.0.0.1:8080/health]
+observability:
+  enable: true
+  log_sources: [journald, nginx, docker, fail2ban]
+  host_metrics: true
+  panel_bind: 127.0.0.1:9400
+  local_data_dir: /var/lib/resistack/observability
+ci:
+  provider: github_actions
+  generate_workflows: true
+  mode: warn-only
+  schedule: "24 3 * * *"
+  scans:
+    dependency: true
+    image: true
+    sbom: true
+    secrets: true
+    license: true
+    osv: true
+reporting:
+  output_path: ./.resistack/reports
+  format: text
+  minimum_severity: low
+alerts:
+  enabled: true
+  webhook_url: https://hooks.example.com/security
+  email: security@example.com
+  slack_url: https://hooks.slack.com/services/T000/B000/XXX
+  thresholds:
+    ssh_failures_15m: 25
+    bans_15m: 10
+    nginx_errors_15m: 30
+    container_restarts: 3
+    disk_percent_used: 85
+    cert_expiry_days: 21
+`
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Mode.Strategy != ModeAuditThenApply {
+		t.Fatalf("unexpected mode: %s", cfg.Mode.Strategy)
+	}
+	if cfg.CI.Provider != CIProviderGitHub {
+		t.Fatalf("unexpected ci provider: %s", cfg.CI.Provider)
+	}
+	if cfg.HostHardening.BackupDir == "" {
+		t.Fatal("expected host hardening backup dir")
+	}
+}

@@ -1,30 +1,32 @@
 package preflight
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 )
 
-func TestCheckLocal_RejectsBuildContexts(t *testing.T) {
-	root := t.TempDir()
-	composePath := filepath.Join(root, "docker-compose.app.yml")
-	if err := os.WriteFile(composePath, []byte("services:\n  app:\n    build: .\n"), 0o644); err != nil {
-		t.Fatalf("write compose: %v", err)
-	}
-	envPath := filepath.Join(root, ".env.app")
-	if err := os.WriteFile(envPath, []byte("FOO=bar\n"), 0o644); err != nil {
-		t.Fatalf("write env: %v", err)
-	}
-
+func TestCheckLocal_ObservabilityRequiresDataDir(t *testing.T) {
 	cfg := config.Default("demo")
-	cfg.App.ComposeFile = composePath
-	cfg.App.EnvFile = envPath
+	cfg.Observability.LocalDataDir = ""
 
-	_, errs := CheckLocal(cfg, root, false)
+	_, errs := CheckLocal(cfg, false)
 	if len(errs) == 0 {
-		t.Fatal("expected build context error")
+		t.Fatal("expected observability error")
+	}
+}
+
+func TestCheckLocal_WarnsWhenAlertsEnabledWithoutDestinations(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Alerts.WebhookURL = ""
+	cfg.Alerts.Email = ""
+	cfg.Alerts.SlackURL = ""
+
+	warnings, errs := CheckLocal(cfg, false)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected alert delivery warning")
 	}
 }

@@ -9,18 +9,15 @@ import (
 func TestCheck_DefaultConfigIsValid(t *testing.T) {
 	cfg := config.Default("proj")
 
-	warnings, errs := Check(cfg)
+	_, errs := Check(cfg)
 	if len(errs) != 0 {
 		t.Fatalf("expected no errors, got %d", len(errs))
 	}
-	if len(warnings) == 0 {
-		t.Fatal("expected default warnings for placeholder dashboard secret")
-	}
 }
 
-func TestCheck_InvalidProfileReturnsError(t *testing.T) {
+func TestCheck_InvalidModeReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
-	cfg.Security.Profile = "invalid"
+	cfg.Mode.Strategy = "managed_deploy"
 
 	_, errs := Check(cfg)
 	if len(errs) == 0 {
@@ -28,44 +25,29 @@ func TestCheck_InvalidProfileReturnsError(t *testing.T) {
 	}
 }
 
-func TestCheck_MissingUpstreamReturnsError(t *testing.T) {
+func TestCheck_InvalidCIProviderReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
-	cfg.App.UpstreamURL = ""
+	cfg.CI.Provider = "gitlab"
 
 	_, errs := Check(cfg)
 	if len(errs) == 0 {
 		t.Fatal("expected validation errors")
-	}
-}
-
-func TestCheck_TLSEnabledWithoutEmailReturnsError(t *testing.T) {
-	cfg := config.Default("proj")
-	cfg.TLS.Enabled = true
-	cfg.TLS.Email = ""
-
-	_, errs := Check(cfg)
-	if len(errs) == 0 {
-		t.Fatal("expected validation errors")
-	}
-}
-
-func TestCheck_TLSStagingAddsWarning(t *testing.T) {
-	cfg := config.Default("proj")
-	cfg.TLS.Enabled = true
-	cfg.TLS.Staging = true
-
-	warnings, errs := Check(cfg)
-	if len(errs) != 0 {
-		t.Fatalf("expected no errors, got %d", len(errs))
-	}
-	if len(warnings) < 2 {
-		t.Fatal("expected tls staging warning")
 	}
 }
 
 func TestCheck_InvalidAllowlistReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
-	cfg.Security.AdminAllowlist = []string{"not-a-cidr"}
+	cfg.HostHardening.UFWPolicy.AdminAllowlist = []string{"not-a-cidr"}
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_InvalidHealthcheckURLReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.AppInventory.HealthcheckURLs = []string{"notaurl"}
 
 	_, errs := Check(cfg)
 	if len(errs) == 0 {

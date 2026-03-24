@@ -1,139 +1,250 @@
 # ResistanceStack
 
-**Build like the Resistance. Deploy like survival depends on it.**
+`ResistanceStack` helps teams harden a VPS, understand what is already running there, add lightweight security visibility, and generate security checks for CI without changing how the application is deployed.
 
-`ResistanceStack` to narzędzie dla zespołów, które nie mają czasu na ręczne gaszenie pożarów bezpieczeństwa na VPS.
-CLI `resistack` automatyzuje obronę: hardening hosta, firewall, fail2ban, reverse proxy, TLS, status i alerty.
+It is built for the common case: one or a few servers, an existing app already running, limited ops capacity, and a need for practical security improvements instead of a large platform rollout.
 
-To klimat ruchu oporu z uniwersum *Terminatora*: mały zespół, realne zagrożenie, szybkie i skuteczne wdrożenie.
+## What You Get
 
-## Problem
+- host inventory for brownfield environments
+- security audit with prioritized findings and remediation hints
+- baseline host hardening for SSH, UFW, fail2ban, sudo, and security updates
+- lightweight observability focused on security and runtime signals
+- standalone GitHub Actions workflows for dependency, image, SBOM, and secret scanning
+- host rollback for the latest hardening change
 
-Internet nie czeka, aż skończysz feature.
-Boty skanują publiczne serwery 24/7, a małe zespoły zwykle nie mają dedykowanego SecOps.
+## Why Teams Use It
 
-Na bazie przeanalizowanych logów (realny przypadek VPS):
-- `189,182` prób nieudanego logowania SSH
-- `112,671` prób z nieprawidłowymi userami
-- `6,386` podejrzanych eventów HTTP
-- `245` błędów upstream
+- to improve VPS security without rebuilding the deployment process
+- to add security checks to an existing repo without touching deploy workflows
+- to understand an inherited server before making changes
+- to get a repeatable baseline for small production environments
 
-`ResistanceStack` adresuje dokładnie ten poziom ryzyka w modelu „minimum operacji, maksimum efektu”.
+## How It Works
 
-## Co dostajesz
-
-- `resistack.yaml` jako pojedynczy kontrakt konfiguracji
-- `resistack scaffold` do wygenerowania lokalnego startera (`resistack.local.yaml`, `docker-compose.app.yml`, `.env.app.example`)
-- automatyczny provisioning przez SSH z host key checking
-- SSH hardening (`PermitRootLogin no`, `PasswordAuthentication no`)
-- UFW z domyślnym `deny incoming` i guardrailem chroniącym operatora przed odcięciem własnego IP
-- fail2ban (`sshd`, `recidive`) + webhook alerty ban/unban
-- release-based deploy aplikacji z uploadem `docker-compose.app.yml` i rollbackiem do poprzedniego release
-- Nginx reverse proxy dla aplikacji i panelu statusu
-- Let's Encrypt TLS (`certbot`) + auto-reload przy renew
-- dashboard statusu (`Uptime Kuma`) pod `/_resistack/status/` z Basic Auth
-- `resistack status` z licznikami SSH/auth, probe HTTP i upstream 5xx względem progów z configu
-- `resistack rotate-secrets` do rotacji hasła dashboardu
-- `resistack uninstall` do bezpiecznego zdjęcia stacka z hosta
-- opcjonalne security workflow do GitHub Actions
-
-## Jak to działa
+The normal flow is:
 
 ```bash
-resistack init myapp
-resistack validate
-resistack deploy
-```
-
-Tryb bezpiecznego podglądu przed wdrożeniem:
-
-```bash
-resistack deploy --dry-run
-```
-
-Status operacyjny i sygnały bezpieczeństwa:
-
-```bash
+resistack init
+resistack inventory
+resistack audit
+resistack apply host-hardening
+resistack ci generate
+resistack observability enable
 resistack status
 ```
 
-Lokalne wygenerowanie gotowego zestawu plików startowych:
+`ResistanceStack` works in four modules:
+
+- `inventory-audit`
+- `host-hardening`
+- `security-observability`
+- `ci-security`
+
+You can use them independently. That means you can start with detection only, generate CI only, or enable observability without touching hardening.
+
+## What It Detects
+
+On the server side:
+
+- nginx, Traefik, or no detected proxy
+- Docker Compose, plain Docker, or systemd-based runtimes
+- open ports and public listeners
+- local TLS certificates
+- SSH-capable users and sudo users
+- UFW and fail2ban state
+- common log locations
+- running containers
+
+In the repository:
+
+- GitHub Actions workflows
+- Node and Next.js projects
+- .NET projects
+- Dockerfiles and Compose files
+
+## Quick Start
+
+### 1. Create Config
 
 ```bash
-resistack scaffold myapp
+resistack init
 ```
 
-## Dla kogo
+This creates `resistack.yaml`.
 
-- zespoły 1-10 osób deployujące aplikacje na 1 VPS
-- startupy i projekty SaaS z ograniczonym budżetem operacyjnym
-- developerzy bez głębokiego doświadczenia w utrzymaniu serwerów
+### 2. Fill In Server Access
 
-## Dla kogo nie
+At minimum, set:
 
-- duże środowiska multi-region/multi-cluster
-- organizacje potrzebujące pełnego SOC/SIEM enterprise
-- workflow wyłącznie Kubernetes-first (to jest roadmapa poza v1)
+- `server.host`
+- `server.ssh_user`
+- `server.private_key_path`
+- `server.host_key_checking`
 
-## Kluczowa konfiguracja
+Optional brownfield hints go into:
 
-Pliki wzorcowe:
-- `resistack.example.yaml`
-- `resistack.local.yaml` (generowany przez `resistack scaffold`)
+- `app_inventory.compose_paths`
+- `app_inventory.nginx_paths`
+- `app_inventory.systemd_units`
+- `app_inventory.domains`
+- `app_inventory.healthcheck_urls`
 
-Najważniejsze pola:
-- `server.*`: dostęp SSH do VPS
-- `server.host_key_checking`: `strict` albo `accept-new`
-- `domain.fqdn`: domena kierująca na publiczny IP serwera
-- `app.compose_file`: plik Compose aplikacji wysyłany na serwer
-- `app.env_file`: opcjonalny plik env dla Compose
-- `app.upstream_url`: backend aplikacji podpinany pod `/`
-- `tls.enabled`: włącz/wyłącz automatyzację certyfikatu
-- `tls.email`: email wymagany przez Let's Encrypt
-- `tls.staging`: `true` dla certyfikatów testowych
-- `alerts.webhook_url`: endpoint alertów bezpieczeństwa
-- `dashboard.basic_auth.*`: ochrona panelu statusowego
+See [resistack.example.yaml](/Users/hciupinski/Repositories/cyber_article/ResistanceStack/resistack.example.yaml).
 
-## Wymagania dla TLS produkcyjnego
-
-- `domain.fqdn` musi wskazywać na publiczny IP VPS
-- porty `80/tcp` i `443/tcp` muszą być osiągalne z Internetu
-- na pierwszy deploy zalecane `tls.staging: true`, potem `false`
-
-## Szybki start (Go)
+### 3. Detect Current State
 
 ```bash
-go run ./cmd/resistack help
-go run ./cmd/resistack scaffold myapp
-go run ./cmd/resistack init myapp
-go run ./cmd/resistack validate
-go run ./cmd/resistack deploy --dry-run
+resistack inventory
 ```
 
-## Status projektu
+Use this before changing anything. It shows what is already running and what the repo contains.
 
-Gotowe:
-- `init`, `validate`, `deploy`, `status`
-- provisioning hosta + reverse proxy + TLS
-- release-based deploy aplikacji i rollback do poprzedniego release
-- status z progami i log-based security counters
-- webhook alerty fail2ban
-- `rotate-secrets` i `uninstall`
+### 4. Generate a Risk Report
 
-Roadmapa:
-- automatyczne alerty z progów HTTP/upstream bez wywoływania `resistack status`
-- backup/restore polityk hosta przy pełnym rollbacku
-- wsparcie dla innych distro niż `apt`
+```bash
+resistack audit
+```
+
+The audit produces findings with:
+
+- severity
+- detected value
+- risk
+- recommendation
+- whether the issue can be remediated automatically
+
+Reports are written to `reporting.output_path`.
+
+### 5. Apply Only What You Want
+
+Examples:
+
+```bash
+resistack apply host-hardening
+resistack apply security-observability
+resistack apply ci-security
+resistack apply inventory-audit host-hardening
+```
+
+Preview changes first:
+
+```bash
+resistack apply host-hardening --dry-run
+```
+
+### 6. Generate Security Workflows
+
+```bash
+resistack ci generate
+resistack ci validate
+```
+
+Generated files:
+
+- `.github/workflows/security-dependencies.yml`
+- `.github/workflows/security-containers.yml`
+- `.github/workflows/security-sbom.yml`
+- `.github/workflows/security-secrets.yml`
+
+These workflows are created alongside existing workflows instead of replacing them.
+
+### 7. Enable Observability
+
+```bash
+resistack observability enable
+```
+
+This installs a local baseline for:
+
+- journald signals
+- nginx logs
+- docker logs
+- fail2ban activity
+- host metrics and runtime snapshots
+
+Disable it when needed:
+
+```bash
+resistack observability disable
+```
+
+### 8. Roll Back the Last Host Change
+
+```bash
+resistack rollback host
+```
+
+Host hardening stores backups of modified system files and can restore the latest applied set.
+
+## Command Reference
+
+```bash
+resistack init
+resistack inventory
+resistack audit
+resistack apply [modules...] [--dry-run]
+resistack status
+resistack ci generate
+resistack ci validate
+resistack observability enable [--dry-run]
+resistack observability disable
+resistack rollback host
+```
+
+## Configuration Overview
+
+Main sections in `resistack.yaml`:
+
+- `mode`
+- `server`
+- `host_hardening`
+- `app_inventory`
+- `observability`
+- `ci`
+- `reporting`
+- `alerts`
+
+Important examples:
+
+- `host_hardening.ssh_hardening`: SSH restrictions and operator guardrails
+- `host_hardening.ufw_policy`: default firewall policy and admin allowlist
+- `host_hardening.fail2ban`: ban windows and retry thresholds
+- `observability.panel_bind`: local bind for the observability view
+- `ci.mode`: `warn-only` or `enforced`
+- `alerts.thresholds`: brute force, bans, nginx errors, restarts, disk, and certificate thresholds
+
+## Typical Scenarios
+
+### Existing Production VPS
+
+Run:
+
+```bash
+resistack inventory
+resistack audit
+```
+
+Then apply only the parts you approve. This is the safest way to adopt the tool on an existing host.
+
+### Repo With Separate UI and API
+
+If your repo contains paths like `ui/` and `src/Public.Api/`, `resistack ci generate` will create separate security workflows for Node and .NET scanning and add container-focused workflows as well.
+
+### Minimal Baseline Without Deployment Changes
+
+If you want only security improvements around an existing app:
+
+```bash
+resistack apply host-hardening
+resistack observability enable
+resistack ci generate
+```
 
 ## Development
 
-- Go 1.26.0 (sprawdzone)
-- testy:
+Run tests with:
 
 ```bash
 GOCACHE=$(pwd)/.cache/go-build GOMODCACHE=$(pwd)/.cache/go-mod go test ./...
 ```
-
----
-
-**ResistanceStack**: kiedy świat sieci zachowuje się jak Skynet, Twoja infrastruktura powinna zachowywać się jak ruch oporu.
