@@ -1,46 +1,96 @@
-# ResistanceStack Architecture v1
+# ResistanceStack Architecture v2
 
 ## Product boundary
 
-v1 is a reusable security platform for small apps on one VPS.
-It is not an application template for a specific framework.
+ResistanceStack v2 is a security baseline platform.
 
-## Control plane
+It sits next to an existing application and deployment process.
+It does not own:
 
-- Local Go CLI (`resistack`) runs on developer machine
-- CLI connects over SSH to target VPS
-- CLI uploads release artifacts and applies idempotent provisioning steps
+- application deployment
+- application release rollback
+- application Compose uploads
+- reverse proxy takeover
+- public TLS ingress takeover
 
-## Data plane (target host)
+Success is measured as:
 
-- Reverse proxy (hardened defaults)
-  - `/` proxied to `app.upstream_url`
-  - `/_resistack/status/` proxied to local Uptime Kuma
-  - optional TLS termination via Let's Encrypt (`certbot` webroot)
-- App containers (owned by user project)
-  - `docker-compose.app.yml` uploaded as a release artifact
-  - `current` symlink points at the active release
-  - failed deploy rolls back to previous release when available
-- Security controls:
-  - firewall baseline
-  - SSH hardening
-  - fail2ban jails (`sshd`, `recidive`)
-  - webhook alerts on fail2ban ban/unban events
-- Lightweight observability:
-  - status dashboard
-  - health, incident, certificate, SSH auth, probe, and upstream error summary
+- safer host baseline
+- better inventory and security posture visibility
+- additional independent CI checks
 
-## Command model
+## Modules
 
-- `init`: create default config
-- `validate`: validate config quality
-- `deploy`: run preflight and provisioning
-- `status`: read health and security signal summary
-- `rotate-secrets`: rotate keys and tokens
-- `uninstall`: remove platform with optional data retention
+### `inventory-audit`
 
-## Security profiles
+- remote brownfield host detection over SSH
+- local repo detection for workflows and technologies
+- risk report with `critical/high/medium/low`
+- remediation plan with auto-remediable flags
 
-- `balanced` (default): safe baseline for most small projects
-- `strict`: lower tolerance and tighter limits
-- `lenient`: compatibility-focused mode
+### `host-hardening`
+
+- SSH hardening
+- UFW baseline
+- fail2ban baseline
+- deploy user and sudo checks
+- file backups before system changes
+- rollback of the last host operation
+
+This module does not manage nginx application config or app containers beyond read-only inspection.
+
+### `security-observability`
+
+- local `systemd` timer for snapshot collection
+- journald, nginx, docker, and fail2ban signal gathering
+- container restart, disk pressure, and certificate inventory checks
+- local-only HTTP file view bound outside the public app ingress
+
+### `ci-security`
+
+- GitHub Actions workflow generation and validation
+- standalone security workflows
+- no overwrite of existing deploy workflows
+- warn-only or enforced modes
+
+## Control flow
+
+- `init`: creates a v2 baseline config
+- `inventory`: collects host and repo state
+- `audit`: evaluates findings and writes a report
+- `apply`: applies selected modules
+- `status`: summarizes host state and audit posture
+- `ci generate`: writes standalone security workflows
+- `ci validate`: checks whether generated workflows are present and current
+- `observability enable|disable`: manages the local observability baseline
+- `rollback host`: restores the last host-hardening backup set
+
+## Data flow
+
+### Remote host
+
+The CLI connects over SSH and gathers:
+
+- host identity
+- active proxy hints
+- runtime hints
+- exposed ports
+- TLS certificate inventory
+- SSH and sudo users
+- UFW and fail2ban state
+- log locations
+- running containers
+
+### Local repo
+
+The CLI inspects:
+
+- `.github/workflows`
+- Node or Next.js projects
+- .NET projects
+- Dockerfiles and Compose files
+- optional inventory hints from `resistack.yaml`
+
+## Legacy scope
+
+Managed deploy capabilities from v1 are legacy only and are intentionally out of the active command model in v2.

@@ -7,9 +7,10 @@ import (
 	"github.com/hciupinski/resistancestack/internal/stack"
 )
 
-func runStatus(args []string, out io.Writer, errOut io.Writer) error {
-	fs := newFlagSet("status")
+func runApply(args []string, out io.Writer, errOut io.Writer) error {
+	fs := newFlagSet("apply")
 	configPath := fs.String("config", defaultConfigPath, "Path to configuration file")
+	dryRun := fs.Bool("dry-run", false, "Print intended changes without executing them")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -21,5 +22,5 @@ func runStatus(args []string, out io.Writer, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return stack.Status(cfg, wd, out)
+	return stack.Apply(cfg, wd, fs.Args(), *dryRun, out, errOut)
 }

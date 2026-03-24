@@ -9,9 +9,22 @@ import (
 	"github.com/hciupinski/resistancestack/internal/config"
 )
 
+var severityRank = map[string]int{
+	config.SeverityLow:      1,
+	config.SeverityMedium:   2,
+	config.SeverityHigh:     3,
+	config.SeverityCritical: 4,
+}
+
 func Check(cfg config.Config) (warnings []string, errs []error) {
 	if strings.TrimSpace(cfg.ProjectName) == "" {
 		errs = append(errs, fmt.Errorf("project_name is required"))
+	}
+
+	if strings.TrimSpace(cfg.Mode.Strategy) == "" {
+		errs = append(errs, fmt.Errorf("mode.strategy is required"))
+	} else if cfg.Mode.Strategy != config.ModeAuditThenApply {
+		errs = append(errs, fmt.Errorf("mode.strategy must be %q", config.ModeAuditThenApply))
 	}
 
 	if strings.TrimSpace(cfg.Server.Host) == "" {
@@ -35,94 +48,130 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 		errs = append(errs, fmt.Errorf("server.known_hosts_path is required when server.host_key_checking=strict"))
 	}
 
-	if strings.TrimSpace(cfg.Domain.FQDN) == "" {
-		errs = append(errs, fmt.Errorf("domain.fqdn is required"))
+	if !cfg.HostHardening.Enabled {
+		warnings = append(warnings, "host_hardening.enabled=false; baseline hardening will not be applied")
 	}
-
-	if strings.TrimSpace(cfg.App.ComposeFile) == "" {
-		errs = append(errs, fmt.Errorf("app.compose_file is required"))
+	if cfg.HostHardening.SSHHardening.MaxAuthTries <= 0 {
+		errs = append(errs, fmt.Errorf("host_hardening.ssh_hardening.max_auth_tries must be > 0"))
 	}
-	if envFile := strings.TrimSpace(cfg.App.EnvFile); envFile == "" {
-		warnings = append(warnings, "app.env_file is empty; compose deployments will run without an env file")
+	if cfg.HostHardening.SSHHardening.LoginGraceTimeSeconds <= 0 {
+		errs = append(errs, fmt.Errorf("host_hardening.ssh_hardening.login_grace_time_seconds must be > 0"))
 	}
-	if strings.TrimSpace(cfg.App.UpstreamURL) == "" {
-		errs = append(errs, fmt.Errorf("app.upstream_url is required"))
-	} else if err := validateURL("app.upstream_url", cfg.App.UpstreamURL); err != nil {
-		errs = append(errs, err)
+	if cfg.HostHardening.UFWPolicy.Enabled {
+		switch strings.ToLower(strings.TrimSpace(cfg.HostHardening.UFWPolicy.DefaultIncoming)) {
+		case "allow", "deny", "reject":
+		default:
+			errs = append(errs, fmt.Errorf("host_hardening.ufw_policy.default_incoming must be one of: allow, deny, reject"))
+		}
+		switch strings.ToLower(strings.TrimSpace(cfg.HostHardening.UFWPolicy.DefaultOutgoing)) {
+		case "allow", "deny", "reject":
+		default:
+			errs = append(errs, fmt.Errorf("host_hardening.ufw_policy.default_outgoing must be one of: allow, deny, reject"))
+		}
+		if len(cfg.HostHardening.UFWPolicy.AllowedTCPPorts) == 0 {
+			warnings = append(warnings, "host_hardening.ufw_policy.allowed_tcp_ports is empty; only admin allowlist may preserve SSH access")
+		}
 	}
-	if strings.TrimSpace(cfg.App.HealthcheckURL) == "" {
-		warnings = append(warnings, "app.healthcheck_url is empty; status checks will be degraded")
-	} else if err := validateURL("app.healthcheck_url", cfg.App.HealthcheckURL); err != nil {
-		errs = append(errs, err)
-	}
-
-	switch strings.ToLower(strings.TrimSpace(cfg.Security.Profile)) {
-	case "balanced", "strict", "lenient":
-	default:
-		errs = append(errs, fmt.Errorf("security.profile must be one of: balanced, strict, lenient"))
-	}
-
-	if len(cfg.Security.AdminAllowlist) == 0 {
-		warnings = append(warnings, "security.admin_allowlist is empty; SSH will not be IP constrained by default")
-	}
-	for _, entry := range cfg.Security.AdminAllowlist {
+	for _, entry := range cfg.HostHardening.UFWPolicy.AdminAllowlist {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
 		}
 		if _, err := netip.ParsePrefix(entry); err != nil {
-			errs = append(errs, fmt.Errorf("security.admin_allowlist contains invalid CIDR %q", entry))
+			errs = append(errs, fmt.Errorf("host_hardening.ufw_policy.admin_allowlist contains invalid CIDR %q", entry))
+		}
+	}
+	if strings.TrimSpace(cfg.HostHardening.BackupDir) == "" {
+		errs = append(errs, fmt.Errorf("host_hardening.backup_dir is required"))
+	}
+	if cfg.HostHardening.Fail2ban.Enabled {
+		if strings.TrimSpace(cfg.HostHardening.Fail2ban.BanTime) == "" {
+			errs = append(errs, fmt.Errorf("host_hardening.fail2ban.ban_time is required"))
+		}
+		if strings.TrimSpace(cfg.HostHardening.Fail2ban.FindTime) == "" {
+			errs = append(errs, fmt.Errorf("host_hardening.fail2ban.find_time is required"))
+		}
+		if cfg.HostHardening.Fail2ban.MaxRetry <= 0 {
+			errs = append(errs, fmt.Errorf("host_hardening.fail2ban.max_retry must be > 0"))
+		}
+		if cfg.HostHardening.Fail2ban.RecidiveEnabled && strings.TrimSpace(cfg.HostHardening.Fail2ban.RecidiveBanTime) == "" {
+			errs = append(errs, fmt.Errorf("host_hardening.fail2ban.recidive_ban_time is required when recidive_enabled=true"))
 		}
 	}
 
-	if cfg.TLS.Enabled {
-		tlsEmail := strings.TrimSpace(cfg.TLS.Email)
-		if tlsEmail == "" {
-			errs = append(errs, fmt.Errorf("tls.email is required when tls.enabled=true"))
+	switch strings.ToLower(strings.TrimSpace(cfg.CI.Provider)) {
+	case config.CIProviderGitHub:
+	default:
+		errs = append(errs, fmt.Errorf("ci.provider must be %q", config.CIProviderGitHub))
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.CI.Mode)) {
+	case config.CIModeWarnOnly, config.CIModeEnforced:
+	default:
+		errs = append(errs, fmt.Errorf("ci.mode must be one of: %s, %s", config.CIModeWarnOnly, config.CIModeEnforced))
+	}
+	if !cfg.CI.GenerateWorkflows {
+		warnings = append(warnings, "ci.generate_workflows=false; CI security workflows will not be generated")
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Reporting.Format)) {
+	case config.FormatText, config.FormatJSON:
+	default:
+		errs = append(errs, fmt.Errorf("reporting.format must be one of: %s, %s", config.FormatText, config.FormatJSON))
+	}
+	if severityRank[strings.ToLower(strings.TrimSpace(cfg.Reporting.MinimumSeverity))] == 0 {
+		errs = append(errs, fmt.Errorf("reporting.minimum_severity must be one of: low, medium, high, critical"))
+	}
+	if strings.TrimSpace(cfg.Reporting.OutputPath) == "" {
+		errs = append(errs, fmt.Errorf("reporting.output_path is required"))
+	}
+
+	if cfg.Observability.Enable {
+		if strings.TrimSpace(cfg.Observability.PanelBind) == "" {
+			errs = append(errs, fmt.Errorf("observability.panel_bind is required when observability.enable=true"))
 		}
-		if tlsEmail != "" && !strings.Contains(tlsEmail, "@") {
-			errs = append(errs, fmt.Errorf("tls.email must be a valid email address"))
+		if strings.TrimSpace(cfg.Observability.LocalDataDir) == "" {
+			errs = append(errs, fmt.Errorf("observability.local_data_dir is required when observability.enable=true"))
 		}
-		if cfg.TLS.Staging {
-			warnings = append(warnings, "tls.staging=true; Let's Encrypt test certificate will be issued")
+		if cfg.Observability.HostMetrics && !containsString(cfg.Observability.LogSources, "journald") {
+			warnings = append(warnings, "observability.host_metrics=true but journald is not listed in observability.log_sources")
 		}
 	}
 
 	if cfg.Alerts.Enabled {
-		if strings.TrimSpace(cfg.Alerts.WebhookURL) == "" {
-			warnings = append(warnings, "alerts.enabled=true but alerts.webhook_url is empty")
+		if strings.TrimSpace(cfg.Alerts.WebhookURL) == "" && strings.TrimSpace(cfg.Alerts.Email) == "" && strings.TrimSpace(cfg.Alerts.SlackURL) == "" {
+			warnings = append(warnings, "alerts.enabled=true but no webhook_url, email, or slack_url is configured")
 		}
-
-		if cfg.Alerts.Thresholds.SSHFail5m <= 0 {
-			errs = append(errs, fmt.Errorf("alerts.thresholds.ssh_fail_5m must be > 0"))
+		if cfg.Alerts.Thresholds.SSHFailures15m <= 0 {
+			errs = append(errs, fmt.Errorf("alerts.thresholds.ssh_failures_15m must be > 0"))
 		}
-		if cfg.Alerts.Thresholds.BansPerHour <= 0 {
-			errs = append(errs, fmt.Errorf("alerts.thresholds.bans_per_hour must be > 0"))
+		if cfg.Alerts.Thresholds.Bans15m <= 0 {
+			errs = append(errs, fmt.Errorf("alerts.thresholds.bans_15m must be > 0"))
 		}
-		if cfg.Alerts.Thresholds.ProbePerHour <= 0 {
-			errs = append(errs, fmt.Errorf("alerts.thresholds.probe_per_hour must be > 0"))
+		if cfg.Alerts.Thresholds.NginxErrors15m <= 0 {
+			errs = append(errs, fmt.Errorf("alerts.thresholds.nginx_errors_15m must be > 0"))
 		}
-		if cfg.Alerts.Thresholds.Upstream5m <= 0 {
-			errs = append(errs, fmt.Errorf("alerts.thresholds.upstream_5m must be > 0"))
+		if cfg.Alerts.Thresholds.ContainerRestarts < 0 {
+			errs = append(errs, fmt.Errorf("alerts.thresholds.container_restarts must be >= 0"))
+		}
+		if cfg.Alerts.Thresholds.DiskPercentUsed <= 0 || cfg.Alerts.Thresholds.DiskPercentUsed > 100 {
+			errs = append(errs, fmt.Errorf("alerts.thresholds.disk_percent_used must be between 1 and 100"))
+		}
+		if cfg.Alerts.Thresholds.CertExpiryDays <= 0 {
+			errs = append(errs, fmt.Errorf("alerts.thresholds.cert_expiry_days must be > 0"))
 		}
 	}
 
-	if path := strings.TrimSpace(cfg.Dashboard.Path); path == "" {
-		errs = append(errs, fmt.Errorf("dashboard.path is required"))
-	} else if !strings.HasPrefix(path, "/") || !strings.HasSuffix(path, "/") {
-		errs = append(errs, fmt.Errorf("dashboard.path must start and end with /"))
+	for _, rawURL := range cfg.AppInventory.HealthcheckURLs {
+		if strings.TrimSpace(rawURL) == "" {
+			continue
+		}
+		if err := validateURL("app_inventory.healthcheck_urls", rawURL); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	if cfg.Dashboard.BasicAuth.Enabled {
-		if strings.TrimSpace(cfg.Dashboard.BasicAuth.Username) == "" {
-			errs = append(errs, fmt.Errorf("dashboard.basic_auth.username is required when dashboard.basic_auth.enabled=true"))
-		}
-		password := strings.TrimSpace(cfg.Dashboard.BasicAuth.Password)
-		if password == "" {
-			errs = append(errs, fmt.Errorf("dashboard.basic_auth.password is required when dashboard.basic_auth.enabled=true"))
-		} else if password == "change-me-now" {
-			warnings = append(warnings, "dashboard.basic_auth.password uses the default placeholder; rotate it before production")
-		}
+	if hasLegacyManagedDeploy(cfg) {
+		warnings = append(warnings, "legacy managed deploy fields detected; v2 treats them as migration hints only")
 	}
 
 	return warnings, errs
@@ -137,4 +186,22 @@ func validateURL(field string, raw string) error {
 		return fmt.Errorf("%s must include scheme and host", field)
 	}
 	return nil
+}
+
+func hasLegacyManagedDeploy(cfg config.Config) bool {
+	return strings.TrimSpace(cfg.LegacyApp.ComposeFile) != "" ||
+		strings.TrimSpace(cfg.LegacyApp.UpstreamURL) != "" ||
+		strings.TrimSpace(cfg.LegacyApp.EnvFile) != "" ||
+		strings.TrimSpace(cfg.LegacyDomain.FQDN) != "" ||
+		cfg.LegacyTLS.Enabled ||
+		strings.TrimSpace(cfg.LegacyDashboard.Path) != ""
+}
+
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), expected) {
+			return true
+		}
+	}
+	return false
 }

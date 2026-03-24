@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -11,8 +10,7 @@ import (
 )
 
 func runInit(args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("init", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
+	fs := newFlagSet("init")
 	configPath := fs.String("config", defaultConfigPath, "Path to configuration file")
 	force := fs.Bool("force", false, "Overwrite existing configuration file")
 	if err := fs.Parse(args); err != nil {
@@ -37,6 +35,6 @@ func runInit(args []string, out io.Writer) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "Created %s for project %q\n", *configPath, projectName)
+	fmt.Fprintf(out, "Created %s for security baseline project %q\n", *configPath, projectName)
 	return nil
 }

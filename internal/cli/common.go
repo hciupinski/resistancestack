@@ -5,18 +5,33 @@ import (
 	"flag"
 	"fmt"
 	"io"
+
+	"github.com/hciupinski/resistancestack/internal/config"
+	"github.com/hciupinski/resistancestack/internal/validation"
 )
 
 const defaultConfigPath = "resistack.yaml"
 
-func loadValidatedConfig(args []string, errOut io.Writer, commandName string) (string, error) {
-	fs := flag.NewFlagSet(commandName, flag.ContinueOnError)
+func newFlagSet(name string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	configPath := fs.String("config", defaultConfigPath, "Path to configuration file")
-	if err := fs.Parse(args); err != nil {
-		return "", err
+	return fs
+}
+
+func loadConfigWithValidation(configPath string, errOut io.Writer) (config.Config, error) {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return config.Config{}, err
 	}
-	return *configPath, nil
+	warnings, errs := validation.Check(cfg)
+	for _, warning := range warnings {
+		fmt.Fprintf(errOut, "warning: %s\n", warning)
+	}
+	writeValidationErrors(errOut, errs)
+	if len(errs) > 0 {
+		return config.Config{}, invalidConfigError(errs)
+	}
+	return cfg, nil
 }
 
 func writeValidationErrors(errOut io.Writer, errs []error) {
