@@ -402,7 +402,7 @@ raise SystemExit(1)
 '
 }
 
-find_valid_certificate_path() {
+find_matching_certificate_path() {
   python3 - "$1" <<'PY'
 import re
 import subprocess
@@ -451,11 +451,16 @@ for fullchain in sorted(Path("/etc/letsencrypt/live").glob("*/fullchain.pem")):
             names.append(name)
     if not any(covers_domain(name, target) for name in names):
         continue
-    if subprocess.run(["openssl", "x509", "-in", str(fullchain), "-noout", "-checkend", "0"], capture_output=True).returncode == 0:
-        print(fullchain)
-        raise SystemExit(0)
+    print(fullchain)
+    raise SystemExit(0)
 raise SystemExit(1)
 PY
+}
+
+certificate_is_valid() {
+  local fullchain="$1"
+  [ -n "${fullchain}" ] || return 1
+  openssl x509 -in "${fullchain}" -noout -checkend 0 >/dev/null 2>&1
 }
 
 stop_known_proxy_for_certbot() {
@@ -479,9 +484,15 @@ ensure_managed_certificate() {
     return 0
   fi
 
-  if certificate_path="$(find_valid_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
-    echo "[resistack] valid TLS certificate already present for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
-    return 0
+  certificate_path=""
+  certificate_exists="false"
+  if certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+    certificate_exists="true"
+    if certificate_is_valid "${certificate_path}"; then
+      echo "[resistack] valid TLS certificate already present for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
+      return 0
+    fi
+    echo "[resistack] existing TLS certificate for ${SSL_PRIMARY_DOMAIN} is expired or invalid: ${certificate_path}"
   fi
 
   if [ "${SSL_CERTIFICATES_AUTO_ISSUE}" != "true" ]; then
@@ -506,6 +517,10 @@ ensure_managed_certificate() {
     --email "${SSL_EMAIL}"
     -d "${SSL_PRIMARY_DOMAIN}"
   )
+  if [ "${certificate_exists}" = "true" ]; then
+    cert_name="$(basename "$(dirname "${certificate_path}")")"
+    certbot_args+=(--cert-name "${cert_name}" --force-renewal)
+  fi
   if [ "${SSL_STAGING}" = "true" ]; then
     certbot_args+=(--staging)
   fi
@@ -514,7 +529,7 @@ ensure_managed_certificate() {
   sudo certbot "${certbot_args[@]}"
   restore_proxy_services
 
-  if ! certificate_path="$(find_valid_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+  if ! certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")" || ! certificate_is_valid "${certificate_path}"; then
     echo "[resistack] certbot finished but no valid certificate was detected for ${SSL_PRIMARY_DOMAIN}" >&2
     exit 1
   fi

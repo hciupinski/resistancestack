@@ -87,9 +87,11 @@ func TestBuildApplyScript_IncludesManagedSSLCertWorkflow(t *testing.T) {
 		"SSL_CERTIFICATES_AUTO_ISSUE='true'",
 		"SSL_PRIMARY_DOMAIN='app.example.com'",
 		"sudo apt-get install -y ufw fail2ban certbot",
-		"find_valid_certificate_path()",
+		"find_matching_certificate_path()",
+		"certificate_is_valid()",
 		"stop_known_proxy_for_certbot()",
 		"sudo certbot \"${certbot_args[@]}\"",
+		"certbot_args+=(--cert-name \"${cert_name}\" --force-renewal)",
 		"ensure_managed_certificate",
 	} {
 		if !strings.Contains(script, expected) {
