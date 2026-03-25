@@ -42,6 +42,27 @@ func TestBuildApplyScript_CleansBootstrapRulesWithoutBrokenPythonPipe(t *testing
 	}
 }
 
+func TestBuildApplyScript_RestartsSSHWithFallbacks(t *testing.T) {
+	cfg := config.Default("demo")
+	script := BuildApplyScript(cfg)
+
+	for _, expected := range []string{
+		"restart_ssh_service()",
+		"sudo systemctl restart ssh >/dev/null 2>&1",
+		"sudo systemctl restart sshd >/dev/null 2>&1",
+		"sudo service ssh restart >/dev/null 2>&1",
+		"sudo service sshd restart >/dev/null 2>&1",
+		"restart_ssh_service",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("expected %q in script", expected)
+		}
+	}
+	if strings.Contains(script, "if systemctl list-unit-files | grep -q '^ssh.service'; then") {
+		t.Fatal("expected brittle SSH unit detection to be removed")
+	}
+}
+
 func TestBuildRollbackScript_RestoresLastBackup(t *testing.T) {
 	cfg := config.Default("demo")
 	script := BuildRollbackScript(cfg)
@@ -50,5 +71,8 @@ func TestBuildRollbackScript_RestoresLastBackup(t *testing.T) {
 	}
 	if !strings.Contains(script, "manifest.txt") {
 		t.Fatal("expected manifest use")
+	}
+	if !strings.Contains(script, "restart_ssh_service()") {
+		t.Fatal("expected rollback script to reuse SSH restart fallback helper")
 	}
 }

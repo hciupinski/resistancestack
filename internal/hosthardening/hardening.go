@@ -379,6 +379,23 @@ backup_file() {
   fi
 }
 
+restart_ssh_service() {
+  if sudo systemctl restart ssh >/dev/null 2>&1; then
+    return 0
+  fi
+  if sudo systemctl restart sshd >/dev/null 2>&1; then
+    return 0
+  fi
+  if sudo service ssh restart >/dev/null 2>&1; then
+    return 0
+  fi
+  if sudo service sshd restart >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[resistack] unable to restart SSH service: tried ssh and sshd via systemd and service" >&2
+  exit 1
+}
+
 ensure_sshd_option() {
   local key="$1"
   local value="$2"
@@ -510,11 +527,7 @@ fi
 sudo ufw --force enable
 
 sudo systemctl restart fail2ban
-if systemctl list-unit-files | grep -q '^ssh.service'; then
-  sudo systemctl restart ssh
-else
-  sudo systemctl restart sshd
-fi
+restart_ssh_service
 
 %s
 %s
@@ -576,12 +589,15 @@ while IFS= read -r original; do
   fi
 done < "${latest}/manifest.txt"
 
+restart_ssh_service() {
+  sudo systemctl restart ssh >/dev/null 2>&1 || \
+  sudo systemctl restart sshd >/dev/null 2>&1 || \
+  sudo service ssh restart >/dev/null 2>&1 || \
+  sudo service sshd restart >/dev/null 2>&1 || true
+}
+
 sudo systemctl restart fail2ban || true
-if systemctl list-unit-files | grep -q '^ssh.service'; then
-  sudo systemctl restart ssh || true
-else
-  sudo systemctl restart sshd || true
-fi
+restart_ssh_service
 sudo ufw reload || true
 echo "[resistack] restored host files from ${latest}"
 `, shellQuote(cfg.HostHardening.BackupDir))
