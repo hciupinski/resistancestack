@@ -11,6 +11,11 @@ import (
 	"github.com/hciupinski/resistancestack/internal/config"
 )
 
+const (
+	osvScannerActionRef = "google/osv-scanner-action@v2.3.0"
+	trivyActionRef      = "aquasecurity/trivy-action@v0.33.1"
+)
+
 type NodeProject struct {
 	Path      string
 	Package   string
@@ -238,11 +243,11 @@ func buildDependencyWorkflow(cfg config.Config, profile TechProfile) string {
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: google/osv-scanner-action/osv-scanner-action@v2
+      - uses: %s
         continue-on-error: %t
         with:
           scan-args: -r .
-`, continueOnError))
+`, osvScannerActionRef, continueOnError))
 	}
 	if cfg.CI.Scans.License {
 		jobs = append(jobs, fmt.Sprintf(`
@@ -251,7 +256,7 @@ func buildDependencyWorkflow(cfg config.Config, profile TechProfile) string {
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: %s
         continue-on-error: %t
         with:
           scan-type: fs
@@ -263,7 +268,7 @@ func buildDependencyWorkflow(cfg config.Config, profile TechProfile) string {
         with:
           name: license-report
           path: trivy-license.txt
-`, continueOnError))
+`, trivyActionRef, continueOnError))
 	}
 	if len(jobs) == 0 {
 		jobs = append(jobs, `
@@ -297,7 +302,7 @@ func buildContainerWorkflow(cfg config.Config, profile TechProfile) string {
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: %s
         continue-on-error: %t
         with:
           scan-type: fs
@@ -306,14 +311,17 @@ func buildContainerWorkflow(cfg config.Config, profile TechProfile) string {
           severity: CRITICAL,HIGH,MEDIUM
           output: trivy-containers.txt
       - name: Document detected container inputs
-        run: printf 'Detected container inputs: %s\n' > detected-container-inputs.txt
+        run: |
+          cat <<'EOF' > detected-container-inputs.txt
+          Detected container inputs: %s
+          EOF
       - uses: actions/upload-artifact@v4
         with:
           name: container-scan
           path: |
             trivy-containers.txt
             detected-container-inputs.txt
-`, continueOnError, targets)
+`, trivyActionRef, continueOnError, targets)
 
 	return workflowHeader("Security Containers", cfg) + jobs
 }
@@ -337,7 +345,10 @@ func buildSBOMWorkflow(cfg config.Config, profile TechProfile) string {
           format: cyclonedx-json
           output-file: sbom.cdx.json
       - name: Annotate SBOM scope
-        run: printf 'SBOM scope: %s\n' > sbom-scope.txt
+        run: |
+          cat <<'EOF' > sbom-scope.txt
+          SBOM scope: %s
+          EOF
       - uses: actions/upload-artifact@v4
         with:
           name: sbom
