@@ -71,6 +71,11 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 		if len(cfg.HostHardening.UFWPolicy.AllowedTCPPorts) == 0 {
 			warnings = append(warnings, "host_hardening.ufw_policy.allowed_tcp_ports is empty; only admin allowlist may preserve SSH access")
 		}
+		switch strings.ToLower(strings.TrimSpace(cfg.HostHardening.UFWPolicy.OperatorAccessMode)) {
+		case "", config.OperatorAccessModePublicHardened, config.OperatorAccessModeAllowlistOnly:
+		default:
+			errs = append(errs, fmt.Errorf("host_hardening.ufw_policy.operator_access_mode must be one of: %s, %s", config.OperatorAccessModePublicHardened, config.OperatorAccessModeAllowlistOnly))
+		}
 	}
 	for _, entry := range cfg.HostHardening.UFWPolicy.AdminAllowlist {
 		entry = strings.TrimSpace(entry)
@@ -79,6 +84,18 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 		}
 		if _, err := netip.ParsePrefix(entry); err != nil {
 			errs = append(errs, fmt.Errorf("host_hardening.ufw_policy.admin_allowlist contains invalid CIDR %q", entry))
+		}
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.HostHardening.UFWPolicy.OperatorAccessMode))
+	if mode == "" {
+		mode = config.OperatorAccessModePublicHardened
+	}
+	if len(cfg.HostHardening.UFWPolicy.AdminAllowlist) == 0 {
+		switch mode {
+		case config.OperatorAccessModePublicHardened:
+			warnings = append(warnings, "host_hardening.ufw_policy.admin_allowlist is empty; public_hardened mode will keep SSH reachable on server.ssh_port")
+		case config.OperatorAccessModeAllowlistOnly:
+			warnings = append(warnings, "host_hardening.ufw_policy.admin_allowlist is empty while operator_access_mode=allowlist_only; apply will rely on preserving the current SSH session only")
 		}
 	}
 	if strings.TrimSpace(cfg.HostHardening.BackupDir) == "" {

@@ -14,6 +14,7 @@ import (
 
 type Snapshot struct {
 	CollectedAt      time.Time         `json:"collected_at"`
+	CurrentSessionIP string            `json:"current_session_ip"`
 	Host             HostInfo          `json:"host"`
 	Proxy            ProxyInfo         `json:"proxy"`
 	Runtime          RuntimeInfo       `json:"runtime"`
@@ -170,6 +171,7 @@ set -euo pipefail
 export RESISTACK_DOMAINS=%s
 python3 - <<'PY'
 import glob
+import ipaddress
 import json
 import os
 import re
@@ -284,6 +286,7 @@ if obs_enabled:
 
 snapshot = {
     "collected_at": datetime.now(timezone.utc).isoformat(),
+    "current_session_ip": "",
     "host": {
         "hostname": text(["hostname"]),
         "os": text(["bash", "-lc", ". /etc/os-release && printf '%%s' \"$PRETTY_NAME\""]),
@@ -302,6 +305,13 @@ snapshot = {
     "containers": containers,
     "observability": {"enabled": obs_enabled, "status": obs_state},
 }
+ssh_connection = os.environ.get("SSH_CONNECTION", "").split()
+if len(ssh_connection) == 4:
+    try:
+        ipaddress.ip_address(ssh_connection[0])
+        snapshot["current_session_ip"] = ssh_connection[0]
+    except ValueError:
+        pass
 print(json.dumps(snapshot))
 PY
 `, shellQuote(domains))

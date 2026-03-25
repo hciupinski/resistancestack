@@ -212,7 +212,7 @@ Main sections in `resistack.yaml`:
 Important examples:
 
 - `host_hardening.ssh_hardening`: SSH restrictions and operator guardrails
-- `host_hardening.ufw_policy`: default firewall policy and admin allowlist
+- `host_hardening.ufw_policy`: default firewall policy, operator access mode, current-session preservation, and optional admin allowlist
 - `host_hardening.fail2ban`: ban windows and retry thresholds
 - `observability.panel_bind`: local bind for the observability view
 - `ci.mode`: `warn-only` or `enforced`

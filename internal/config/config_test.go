@@ -33,6 +33,8 @@ host_hardening:
     default_incoming: deny
     default_outgoing: allow
     allowed_tcp_ports: [22, 80, 443]
+    operator_access_mode: public_hardened
+    preserve_current_session: true
     admin_allowlist: ["203.0.113.10/32"]
   fail2ban:
     enabled: true
@@ -102,5 +104,11 @@ alerts:
 	}
 	if cfg.HostHardening.BackupDir == "" {
 		t.Fatal("expected host hardening backup dir")
+	}
+	if cfg.HostHardening.UFWPolicy.OperatorAccessMode != OperatorAccessModePublicHardened {
+		t.Fatalf("unexpected operator access mode: %s", cfg.HostHardening.UFWPolicy.OperatorAccessMode)
+	}
+	if !cfg.HostHardening.UFWPolicy.PreserveCurrentSession {
+		t.Fatal("expected preserve_current_session=true")
 	}
 }

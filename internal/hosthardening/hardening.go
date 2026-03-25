@@ -3,12 +3,25 @@ package hosthardening
 import (
 	"fmt"
 	"io"
+	"net/netip"
 	"strconv"
 	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/remote"
 )
+
+type AccessPlan struct {
+	Mode                   string
+	CurrentOperatorIP      string
+	PreserveCurrentSession bool
+	StaticAllowlist        []string
+	EffectiveAllowlist     []string
+	BootstrapCIDR          string
+	OpenSSHGlobally        bool
+	BlockingReason         string
+	FinalRuleModel         string
+}
 
 func Apply(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) error {
 	target := remote.Target{
@@ -19,12 +32,23 @@ func Apply(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) erro
 		HostKeyChecking: cfg.Server.HostKeyChecking,
 		KnownHostsPath:  cfg.Server.KnownHostsPath,
 	}
-	script := BuildApplyScript(cfg)
+
 	if dryRun {
-		_, _ = fmt.Fprintln(out, script)
+		plan, previewErr := PreviewAccessPlan(target, cfg)
+		if previewErr != nil {
+			fmt.Fprintf(errOut, "warning: unable to derive current SSH session for dry-run: %v\n", previewErr)
+			plan = BuildAccessPlan(cfg, "")
+		}
+		fmt.Fprintln(out, FormatAccessPlan(plan))
+		fmt.Fprintln(out, "Generated host-hardening script:")
+		fmt.Fprintln(out, BuildApplyScript(cfg))
+		if plan.BlockingReason != "" {
+			return fmt.Errorf("host hardening preview failed: %s", plan.BlockingReason)
+		}
 		return nil
 	}
-	return remote.RunScript(target, script, out, errOut)
+
+	return remote.RunScript(target, BuildApplyScript(cfg), out, errOut)
 }
 
 func Rollback(cfg config.Config, out io.Writer, errOut io.Writer) error {
@@ -39,6 +63,120 @@ func Rollback(cfg config.Config, out io.Writer, errOut io.Writer) error {
 	return remote.RunScript(target, BuildRollbackScript(cfg), out, errOut)
 }
 
+func PreviewAccessPlan(target remote.Target, cfg config.Config) (AccessPlan, error) {
+	raw, err := remote.Capture(target, `printf '%s' "${SSH_CONNECTION:-}"`)
+	if err != nil {
+		return AccessPlan{}, err
+	}
+	currentIP, err := ParseCurrentOperatorIP(strings.TrimSpace(raw))
+	if err != nil {
+		return BuildAccessPlan(cfg, ""), err
+	}
+	return BuildAccessPlan(cfg, currentIP), nil
+}
+
+func ParseCurrentOperatorIP(raw string) (string, error) {
+	fields := strings.Fields(strings.TrimSpace(raw))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("SSH_CONNECTION is empty")
+	}
+	if len(fields) != 4 {
+		return "", fmt.Errorf("SSH_CONNECTION must contain 4 tokens, got %d", len(fields))
+	}
+	addr, err := netip.ParseAddr(fields[0])
+	if err != nil {
+		return "", fmt.Errorf("parse SSH source IP: %w", err)
+	}
+	return addr.String(), nil
+}
+
+func BuildAccessPlan(cfg config.Config, currentOperatorIP string) AccessPlan {
+	mode := cfg.HostHardening.UFWPolicy.OperatorAccessMode
+	if strings.TrimSpace(mode) == "" {
+		mode = config.OperatorAccessModePublicHardened
+	}
+
+	plan := AccessPlan{
+		Mode:                   mode,
+		CurrentOperatorIP:      strings.TrimSpace(currentOperatorIP),
+		PreserveCurrentSession: cfg.HostHardening.UFWPolicy.PreserveCurrentSession,
+		StaticAllowlist:        sanitizeAllowlist(cfg.HostHardening.UFWPolicy.AdminAllowlist),
+	}
+	plan.EffectiveAllowlist = append([]string{}, plan.StaticAllowlist...)
+
+	currentIPValid := false
+	if plan.CurrentOperatorIP != "" {
+		_, err := netip.ParseAddr(plan.CurrentOperatorIP)
+		currentIPValid = err == nil
+	}
+
+	if currentIPValid && plan.PreserveCurrentSession && !ipInAllowlist(plan.CurrentOperatorIP, plan.StaticAllowlist) {
+		plan.BootstrapCIDR = cidrForIP(plan.CurrentOperatorIP)
+		plan.EffectiveAllowlist = append(plan.EffectiveAllowlist, plan.BootstrapCIDR)
+	}
+
+	switch mode {
+	case config.OperatorAccessModeAllowlistOnly:
+		if !currentIPValid {
+			plan.BlockingReason = "unable to derive current SSH client IP for allowlist_only mode"
+		} else if len(plan.EffectiveAllowlist) == 0 {
+			plan.BlockingReason = "no effective SSH allowlist available for allowlist_only mode"
+		} else if !ipInAllowlist(plan.CurrentOperatorIP, plan.EffectiveAllowlist) {
+			plan.BlockingReason = fmt.Sprintf("current SSH client IP %s is outside the effective allowlist", plan.CurrentOperatorIP)
+		}
+	default:
+		if len(plan.StaticAllowlist) == 0 {
+			plan.OpenSSHGlobally = true
+		} else if plan.PreserveCurrentSession && !currentIPValid {
+			plan.BlockingReason = "unable to derive current SSH client IP while preserve_current_session=true and static allowlist rules are configured"
+		}
+	}
+
+	switch {
+	case plan.OpenSSHGlobally:
+		plan.FinalRuleModel = fmt.Sprintf("global SSH access on tcp/%d with key-only hardening", cfg.Server.SSHPort)
+	case len(plan.StaticAllowlist) > 0:
+		plan.FinalRuleModel = fmt.Sprintf("static allowlist on tcp/%d", cfg.Server.SSHPort)
+	default:
+		plan.FinalRuleModel = fmt.Sprintf("no static allowlist on tcp/%d", cfg.Server.SSHPort)
+	}
+	if plan.BootstrapCIDR != "" {
+		plan.FinalRuleModel += fmt.Sprintf(" + bootstrap %s", plan.BootstrapCIDR)
+	}
+	if mode == config.OperatorAccessModeAllowlistOnly {
+		plan.FinalRuleModel = "allowlist-only " + plan.FinalRuleModel
+	}
+
+	return plan
+}
+
+func FormatAccessPlan(plan AccessPlan) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Host hardening access preview:\n")
+	fmt.Fprintf(&b, "- operator access mode: %s\n", plan.Mode)
+	if plan.CurrentOperatorIP == "" {
+		fmt.Fprintf(&b, "- current source IP: unavailable\n")
+	} else {
+		fmt.Fprintf(&b, "- current source IP: %s\n", plan.CurrentOperatorIP)
+	}
+	fmt.Fprintf(&b, "- preserve current session: %t\n", plan.PreserveCurrentSession)
+	if len(plan.StaticAllowlist) == 0 {
+		fmt.Fprintf(&b, "- static admin allowlist: none\n")
+	} else {
+		fmt.Fprintf(&b, "- static admin allowlist: %s\n", strings.Join(plan.StaticAllowlist, ", "))
+	}
+	if plan.BootstrapCIDR == "" {
+		fmt.Fprintf(&b, "- bootstrap current session: no\n")
+	} else {
+		fmt.Fprintf(&b, "- bootstrap current session: yes (%s)\n", plan.BootstrapCIDR)
+	}
+	fmt.Fprintf(&b, "- final SSH rule model: %s\n", plan.FinalRuleModel)
+	if plan.BlockingReason != "" {
+		fmt.Fprintf(&b, "- apply would fail: %s\n", plan.BlockingReason)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
 func BuildApplyScript(cfg config.Config) string {
 	allowUsers := ""
 	if len(cfg.HostHardening.SSHHardening.AllowUsers) > 0 {
@@ -47,18 +185,14 @@ func BuildApplyScript(cfg config.Config) string {
 
 	ufwTCPRules := strings.Builder{}
 	for _, port := range cfg.HostHardening.UFWPolicy.AllowedTCPPorts {
+		if port == cfg.Server.SSHPort {
+			continue
+		}
 		fmt.Fprintf(&ufwTCPRules, "sudo ufw allow %d/tcp\n", port)
 	}
 	ufwUDPRules := strings.Builder{}
 	for _, port := range cfg.HostHardening.UFWPolicy.AllowedUDPPorts {
 		fmt.Fprintf(&ufwUDPRules, "sudo ufw allow %d/udp\n", port)
-	}
-	ufwAdminRules := strings.Builder{}
-	for _, cidr := range cfg.HostHardening.UFWPolicy.AdminAllowlist {
-		fmt.Fprintf(&ufwAdminRules, "sudo ufw allow from %s to any port %d proto tcp\n", shellQuote(cidr), cfg.Server.SSHPort)
-	}
-	if ufwAdminRules.Len() == 0 {
-		fmt.Fprintf(&ufwAdminRules, "sudo ufw allow %d/tcp\n", cfg.Server.SSHPort)
 	}
 
 	passwordlessCheck := "false"
@@ -91,6 +225,11 @@ fi
 `
 	}
 
+	operatorAccessMode := cfg.HostHardening.UFWPolicy.OperatorAccessMode
+	if operatorAccessMode == "" {
+		operatorAccessMode = config.OperatorAccessModePublicHardened
+	}
+
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
@@ -98,6 +237,9 @@ BACKUP_ROOT=%s
 SSH_PORT=%d
 ALLOW_USERS=%s
 REQUIRE_PASSWORDLESS_SUDO=%s
+STATIC_ADMIN_ALLOWLIST=%s
+OPERATOR_ACCESS_MODE=%s
+PRESERVE_CURRENT_SESSION=%s
 
 require_privileged_access() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -116,6 +258,99 @@ require_privileged_access() {
   echo "[resistack]   sudo chmod 440 /etc/sudoers.d/resistack-%s" >&2
   echo "[resistack] then verify: sudo -n true && echo OK" >&2
   exit 1
+}
+
+parse_current_operator_ip() {
+  python3 - <<'PY'
+import ipaddress
+import os
+import sys
+
+raw = os.environ.get("SSH_CONNECTION", "").split()
+if len(raw) != 4:
+    sys.exit(0)
+try:
+    ip = ipaddress.ip_address(raw[0])
+except ValueError:
+    sys.exit(0)
+print(ip)
+PY
+}
+
+ip_in_allowlist() {
+  python3 - "$1" "$2" <<'PY'
+import ipaddress
+import sys
+
+allowlist = [item.strip() for item in sys.argv[1].split(",") if item.strip()]
+raw_ip = sys.argv[2].strip()
+if not allowlist or not raw_ip:
+    raise SystemExit(1)
+ip = ipaddress.ip_address(raw_ip)
+for item in allowlist:
+    if ip in ipaddress.ip_network(item, strict=False):
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+cidr_for_ip() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+ip = ipaddress.ip_address(sys.argv[1].strip())
+suffix = "32" if ip.version == 4 else "128"
+print(f"{ip}/{suffix}")
+PY
+}
+
+append_csv() {
+  local current="$1"
+  local item="$2"
+  if [ -z "${current}" ]; then
+    printf '%%s' "${item}"
+    return 0
+  fi
+  printf '%%s,%%s' "${current}" "${item}"
+}
+
+cleanup_bootstrap_rules() {
+  local numbers
+  numbers="$(
+    sudo ufw status numbered 2>/dev/null | python3 - <<'PY'
+import re
+import sys
+
+matches = []
+for line in sys.stdin:
+    if "resistack-bootstrap" not in line:
+        continue
+    match = re.match(r"\[\s*(\d+)\]", line)
+    if match:
+        matches.append(int(match.group(1)))
+for item in reversed(matches):
+    print(item)
+PY
+  )"
+  if [ -z "${numbers}" ]; then
+    return 0
+  fi
+  while IFS= read -r number; do
+    [ -z "${number}" ] && continue
+    sudo ufw --force delete "${number}" >/dev/null 2>&1 || true
+  done <<EOF
+${numbers}
+EOF
+}
+
+apply_static_allowlist_rules() {
+  local cidr
+  IFS=',' read -r -a cidrs <<< "${STATIC_ADMIN_ALLOWLIST}"
+  for cidr in "${cidrs[@]}"; do
+    [ -z "${cidr}" ] && continue
+    sudo ufw allow from "${cidr}" to any port "${SSH_PORT}" proto tcp
+  done
 }
 
 require_privileged_access
@@ -153,27 +388,6 @@ ensure_sshd_option() {
   fi
 }
 
-validate_current_operator() {
-  local current_ip="${SSH_CONNECTION%% *}"
-  if [ -z "${current_ip}" ]; then
-    return 0
-  fi
-  python3 - %s "${current_ip}" <<'PY'
-import ipaddress
-import sys
-
-raw = sys.argv[1]
-current_ip = sys.argv[2]
-allowlist = [item.strip() for item in raw.split(",") if item.strip()]
-if not allowlist:
-    raise SystemExit(0)
-ip = ipaddress.ip_address(current_ip)
-if not any(ip in ipaddress.ip_network(item, strict=False) for item in allowlist):
-    print(f"current SSH client {current_ip} is outside host_hardening.ufw_policy.admin_allowlist", file=sys.stderr)
-    raise SystemExit(1)
-PY
-}
-
 if [ "${REQUIRE_PASSWORDLESS_SUDO}" = "true" ]; then
   require_privileged_access
 fi
@@ -186,7 +400,63 @@ else
   exit 1
 fi
 
-validate_current_operator
+CURRENT_OPERATOR_IP="$(parse_current_operator_ip)"
+EFFECTIVE_ALLOWLIST="${STATIC_ADMIN_ALLOWLIST}"
+BOOTSTRAP_CIDR=""
+OPEN_SSH_GLOBALLY="false"
+BLOCKING_REASON=""
+
+if [ -n "${CURRENT_OPERATOR_IP}" ] && [ "${PRESERVE_CURRENT_SESSION}" = "true" ]; then
+  if ! ip_in_allowlist "${STATIC_ADMIN_ALLOWLIST}" "${CURRENT_OPERATOR_IP}"; then
+    BOOTSTRAP_CIDR="$(cidr_for_ip "${CURRENT_OPERATOR_IP}")"
+    EFFECTIVE_ALLOWLIST="$(append_csv "${EFFECTIVE_ALLOWLIST}" "${BOOTSTRAP_CIDR}")"
+  fi
+fi
+
+if [ "${OPERATOR_ACCESS_MODE}" = "public_hardened" ]; then
+  if [ -z "${STATIC_ADMIN_ALLOWLIST}" ]; then
+    OPEN_SSH_GLOBALLY="true"
+  elif [ "${PRESERVE_CURRENT_SESSION}" = "true" ] && [ -z "${CURRENT_OPERATOR_IP}" ]; then
+    BLOCKING_REASON="unable to derive current SSH client IP while preserve_current_session=true and static allowlist rules are configured"
+  fi
+else
+  if [ -z "${CURRENT_OPERATOR_IP}" ]; then
+    BLOCKING_REASON="unable to derive current SSH client IP for allowlist_only mode"
+  elif [ -z "${EFFECTIVE_ALLOWLIST}" ]; then
+    BLOCKING_REASON="no effective SSH allowlist available for allowlist_only mode"
+  elif ! ip_in_allowlist "${EFFECTIVE_ALLOWLIST}" "${CURRENT_OPERATOR_IP}"; then
+    BLOCKING_REASON="current SSH client IP ${CURRENT_OPERATOR_IP} is outside the effective SSH allowlist"
+  fi
+fi
+
+FINAL_SSH_RULE_MODEL="static allowlist on tcp/${SSH_PORT}"
+if [ "${OPEN_SSH_GLOBALLY}" = "true" ]; then
+  FINAL_SSH_RULE_MODEL="global SSH access on tcp/${SSH_PORT} with key-only hardening"
+fi
+if [ -n "${BOOTSTRAP_CIDR}" ]; then
+  FINAL_SSH_RULE_MODEL="${FINAL_SSH_RULE_MODEL} + bootstrap ${BOOTSTRAP_CIDR}"
+fi
+if [ "${OPERATOR_ACCESS_MODE}" = "allowlist_only" ]; then
+  FINAL_SSH_RULE_MODEL="allowlist-only ${FINAL_SSH_RULE_MODEL}"
+fi
+
+echo "[resistack] operator access mode: ${OPERATOR_ACCESS_MODE}"
+if [ -n "${CURRENT_OPERATOR_IP}" ]; then
+  echo "[resistack] detected current source IP: ${CURRENT_OPERATOR_IP}"
+else
+  echo "[resistack] detected current source IP: unavailable"
+fi
+if [ -n "${BOOTSTRAP_CIDR}" ]; then
+  echo "[resistack] bootstrap current session: yes (${BOOTSTRAP_CIDR})"
+else
+  echo "[resistack] bootstrap current session: no"
+fi
+echo "[resistack] final SSH rule model: ${FINAL_SSH_RULE_MODEL}"
+
+if [ -n "${BLOCKING_REASON}" ]; then
+  echo "[resistack] refusing to change host firewall: ${BLOCKING_REASON}" >&2
+  exit 1
+fi
 
 backup_file /etc/ssh/sshd_config
 ensure_sshd_option PermitRootLogin %s
@@ -225,7 +495,16 @@ append_manifest /etc/fail2ban/jail.d/resistack-sshd.local
 sudo ufw --force disable >/dev/null 2>&1 || true
 sudo ufw default %s incoming
 sudo ufw default %s outgoing
-%s%s%s
+cleanup_bootstrap_rules
+if [ "${OPEN_SSH_GLOBALLY}" = "true" ]; then
+  sudo ufw allow "${SSH_PORT}/tcp"
+else
+  apply_static_allowlist_rules
+  if [ -n "${BOOTSTRAP_CIDR}" ]; then
+    sudo ufw allow from "${BOOTSTRAP_CIDR}" to any port "${SSH_PORT}" proto tcp comment 'resistack-bootstrap'
+  fi
+fi
+%s%s
 sudo ufw --force enable
 
 sudo systemctl restart fail2ban
@@ -248,11 +527,13 @@ echo "[resistack] host hardening applied"
 		cfg.Server.SSHPort,
 		shellQuote(allowUsers),
 		shellQuote(passwordlessCheck),
+		shellQuote(strings.Join(sanitizeAllowlist(cfg.HostHardening.UFWPolicy.AdminAllowlist), ",")),
+		shellQuote(operatorAccessMode),
+		shellQuote(boolString(cfg.HostHardening.UFWPolicy.PreserveCurrentSession)),
 		cfg.Server.SSHUser,
 		cfg.Server.SSHUser,
 		cfg.Server.SSHUser,
 		cfg.Server.SSHUser,
-		shellQuote(strings.Join(cfg.HostHardening.UFWPolicy.AdminAllowlist, ",")),
 		yesNo(!cfg.HostHardening.SSHHardening.DisableRootLogin, "prohibit-password", "no"),
 		yesNo(!cfg.HostHardening.SSHHardening.DisablePasswordAuth, "yes", "no"),
 		cfg.HostHardening.SSHHardening.MaxAuthTries,
@@ -265,7 +546,6 @@ echo "[resistack] host hardening applied"
 		cfg.HostHardening.Fail2ban.RecidiveBanTime,
 		cfg.HostHardening.UFWPolicy.DefaultIncoming,
 		cfg.HostHardening.UFWPolicy.DefaultOutgoing,
-		ufwAdminRules.String(),
 		ufwTCPRules.String(),
 		ufwUDPRules.String(),
 		automaticUpdates,
@@ -332,4 +612,44 @@ func PortsToStrings(ports []int) []string {
 		values = append(values, strconv.Itoa(port))
 	}
 	return values
+}
+
+func sanitizeAllowlist(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		result = append(result, value)
+	}
+	return result
+}
+
+func ipInAllowlist(rawIP string, allowlist []string) bool {
+	ip, err := netip.ParseAddr(strings.TrimSpace(rawIP))
+	if err != nil {
+		return false
+	}
+	for _, entry := range allowlist {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
+		if err != nil {
+			continue
+		}
+		if prefix.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func cidrForIP(rawIP string) string {
+	ip, err := netip.ParseAddr(strings.TrimSpace(rawIP))
+	if err != nil {
+		return ""
+	}
+	if ip.Is4() {
+		return ip.String() + "/32"
+	}
+	return ip.String() + "/128"
 }

@@ -14,11 +14,12 @@ func TestBuildApplyScript_ContainsGuardrailsAndBackups(t *testing.T) {
 	for _, expected := range []string{
 		"require_privileged_access",
 		"passwordless sudo is required for host hardening",
-		"validate_current_operator",
+		"parse_current_operator_ip",
+		"cleanup_bootstrap_rules",
+		"resistack-bootstrap",
 		"backup_file /etc/ssh/sshd_config",
 		"sudo sshd -t",
-		"sudo ufw default",
-		"/etc/fail2ban/jail.d/resistack-sshd.local",
+		"operator access mode",
 	} {
 		if !strings.Contains(script, expected) {
 			t.Fatalf("expected %q in script", expected)
