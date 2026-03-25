@@ -129,6 +129,21 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 	if !cfg.CI.GenerateWorkflows {
 		warnings = append(warnings, "ci.generate_workflows=false; CI security workflows will not be generated")
 	}
+	switch strings.ToLower(strings.TrimSpace(cfg.CI.GitHub.RepositoryVisibility)) {
+	case "", config.RepoVisibilityUnknown, config.RepoVisibilityPublic, config.RepoVisibilityPrivate, config.RepoVisibilityInternal:
+	default:
+		errs = append(errs, fmt.Errorf("ci.github.repository_visibility must be one of: %s, %s, %s, %s", config.RepoVisibilityUnknown, config.RepoVisibilityPublic, config.RepoVisibilityPrivate, config.RepoVisibilityInternal))
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.CI.GitHub.SARIFUploadMode)) {
+	case "", config.CISARIFUploadModeAuto, config.CISARIFUploadModeEnabled, config.CISARIFUploadModeDisabled:
+	default:
+		errs = append(errs, fmt.Errorf("ci.github.sarif_upload_mode must be one of: %s, %s, %s", config.CISARIFUploadModeAuto, config.CISARIFUploadModeEnabled, config.CISARIFUploadModeDisabled))
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.CI.GitHub.SARIFUploadMode), config.CISARIFUploadModeEnabled) &&
+		!cfg.CI.GitHub.CodeScanningEnabled &&
+		!strings.EqualFold(strings.TrimSpace(cfg.CI.GitHub.RepositoryVisibility), config.RepoVisibilityPublic) {
+		warnings = append(warnings, "ci.github.sarif_upload_mode=enabled but repository_visibility is not public and code_scanning_enabled=false; SARIF upload may fail in GitHub Actions")
+	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Reporting.Format)) {
 	case config.FormatText, config.FormatJSON:

@@ -76,6 +76,10 @@ ci:
   generate_workflows: true
   mode: "warn-only"
   schedule: "24 3 * * *"
+  github:
+    repository_visibility: "unknown"
+    code_scanning_enabled: false
+    sarif_upload_mode: "auto"
   scans:
     dependency: true
     image: true

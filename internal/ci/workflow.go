@@ -247,10 +247,11 @@ func buildDependencyWorkflow(cfg config.Config, profile TechProfile) string {
       security-events: write
     with:
       fail-on-vuln: %t
+      upload-sarif: %t
       scan-args: |-
         --recursive
         ./
-`, osvScannerWorkflowRef, !continueOnError))
+`, osvScannerWorkflowRef, !continueOnError, shouldUploadSARIF(cfg)))
 	}
 	if cfg.CI.Scans.License {
 		jobs = append(jobs, fmt.Sprintf(`
@@ -406,6 +407,20 @@ jobs:
 
 func workflowContinueOnError(cfg config.Config) bool {
 	return strings.EqualFold(strings.TrimSpace(cfg.CI.Mode), config.CIModeWarnOnly)
+}
+
+func shouldUploadSARIF(cfg config.Config) bool {
+	switch strings.ToLower(strings.TrimSpace(cfg.CI.GitHub.SARIFUploadMode)) {
+	case config.CISARIFUploadModeEnabled:
+		return true
+	case config.CISARIFUploadModeDisabled:
+		return false
+	}
+
+	if cfg.CI.GitHub.CodeScanningEnabled {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(cfg.CI.GitHub.RepositoryVisibility), config.RepoVisibilityPublic)
 }
 
 func sanitizeJobID(v string) string {

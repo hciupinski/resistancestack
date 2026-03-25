@@ -84,3 +84,44 @@ func TestCheck_PublicHardenedWithoutAllowlistWarns(t *testing.T) {
 		t.Fatal("expected public_hardened allowlist warning")
 	}
 }
+
+func TestCheck_InvalidSARIFUploadModeReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.CI.GitHub.SARIFUploadMode = "sometimes"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_InvalidRepositoryVisibilityReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.CI.GitHub.RepositoryVisibility = "partner"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_EnabledSARIFWithoutSupportedRepoWarns(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.CI.GitHub.RepositoryVisibility = config.RepoVisibilityPrivate
+	cfg.CI.GitHub.CodeScanningEnabled = false
+	cfg.CI.GitHub.SARIFUploadMode = config.CISARIFUploadModeEnabled
+
+	warnings, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	found := false
+	for _, warning := range warnings {
+		if warning == "ci.github.sarif_upload_mode=enabled but repository_visibility is not public and code_scanning_enabled=false; SARIF upload may fail in GitHub Actions" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected SARIF support warning")
+	}
+}

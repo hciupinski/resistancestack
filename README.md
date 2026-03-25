@@ -153,6 +153,17 @@ Generated files:
 
 These workflows are created alongside existing workflows instead of replacing them.
 
+For GitHub SARIF uploads, use `ci.github.sarif_upload_mode`:
+
+- `auto`: upload only when the repo is configured as public or `ci.github.code_scanning_enabled=true`
+- `enabled`: always emit `upload-sarif: true`
+- `disabled`: always emit `upload-sarif: false`
+
+Repository hints live under:
+
+- `ci.github.repository_visibility`
+- `ci.github.code_scanning_enabled`
+
 ### 7. Enable Observability
 
 ```bash
@@ -216,6 +227,7 @@ Important examples:
 - `host_hardening.fail2ban`: ban windows and retry thresholds
 - `observability.panel_bind`: local bind for the observability view
 - `ci.mode`: `warn-only` or `enforced`
+- `ci.github.sarif_upload_mode`: `auto`, `enabled`, or `disabled`
 - `alerts.thresholds`: brute force, bans, nginx errors, restarts, disk, and certificate thresholds
 
 ## Typical Scenarios
