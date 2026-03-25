@@ -8,16 +8,18 @@ import (
 )
 
 const (
-	ModeAuditThenApply = "audit_then_apply"
-	CIProviderGitHub   = "github_actions"
-	CIModeWarnOnly     = "warn-only"
-	CIModeEnforced     = "enforced"
-	FormatText         = "text"
-	FormatJSON         = "json"
-	SeverityLow        = "low"
-	SeverityMedium     = "medium"
-	SeverityHigh       = "high"
-	SeverityCritical   = "critical"
+	ModeAuditThenApply               = "audit_then_apply"
+	CIProviderGitHub                 = "github_actions"
+	CIModeWarnOnly                   = "warn-only"
+	CIModeEnforced                   = "enforced"
+	FormatText                       = "text"
+	FormatJSON                       = "json"
+	SeverityLow                      = "low"
+	SeverityMedium                   = "medium"
+	SeverityHigh                     = "high"
+	SeverityCritical                 = "critical"
+	OperatorAccessModePublicHardened = "public_hardened"
+	OperatorAccessModeAllowlistOnly  = "allowlist_only"
 )
 
 type Config struct {
@@ -72,12 +74,14 @@ type SSHHardeningConfig struct {
 }
 
 type UFWPolicyConfig struct {
-	Enabled         bool     `yaml:"enabled"`
-	DefaultIncoming string   `yaml:"default_incoming"`
-	DefaultOutgoing string   `yaml:"default_outgoing"`
-	AllowedTCPPorts []int    `yaml:"allowed_tcp_ports,omitempty"`
-	AllowedUDPPorts []int    `yaml:"allowed_udp_ports,omitempty"`
-	AdminAllowlist  []string `yaml:"admin_allowlist,omitempty"`
+	Enabled                bool     `yaml:"enabled"`
+	DefaultIncoming        string   `yaml:"default_incoming"`
+	DefaultOutgoing        string   `yaml:"default_outgoing"`
+	AllowedTCPPorts        []int    `yaml:"allowed_tcp_ports,omitempty"`
+	AllowedUDPPorts        []int    `yaml:"allowed_udp_ports,omitempty"`
+	AdminAllowlist         []string `yaml:"admin_allowlist,omitempty"`
+	OperatorAccessMode     string   `yaml:"operator_access_mode"`
+	PreserveCurrentSession bool     `yaml:"preserve_current_session"`
 }
 
 type Fail2banConfig struct {
@@ -204,11 +208,13 @@ func Default(projectName string) Config {
 				RequirePasswordlessSudo: true,
 			},
 			UFWPolicy: UFWPolicyConfig{
-				Enabled:         true,
-				DefaultIncoming: "deny",
-				DefaultOutgoing: "allow",
-				AllowedTCPPorts: []int{22, 80, 443},
-				AdminAllowlist:  []string{"203.0.113.10/32"},
+				Enabled:                true,
+				DefaultIncoming:        "deny",
+				DefaultOutgoing:        "allow",
+				AllowedTCPPorts:        []int{22, 80, 443},
+				AdminAllowlist:         []string{},
+				OperatorAccessMode:     OperatorAccessModePublicHardened,
+				PreserveCurrentSession: true,
 			},
 			Fail2ban: Fail2banConfig{
 				Enabled:         true,

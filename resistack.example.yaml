@@ -25,12 +25,13 @@ host_hardening:
     enabled: true
     default_incoming: "deny"
     default_outgoing: "allow"
+    operator_access_mode: "public_hardened"
+    preserve_current_session: true
     allowed_tcp_ports:
       - 22
       - 80
       - 443
-    admin_allowlist:
-      - "203.0.113.10/32"
+    admin_allowlist: []
   fail2ban:
     enabled: true
     ban_time: "1h"

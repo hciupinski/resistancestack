@@ -35,6 +35,9 @@ func TestApplyDryRun_PrintsHostHardeningScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply dry-run: %v", err)
 	}
+	if !strings.Contains(out.String(), "Host hardening access preview:") {
+		t.Fatal("expected access preview in dry-run output")
+	}
 	if !strings.Contains(out.String(), "backup_file /etc/ssh/sshd_config") {
 		t.Fatal("expected backup logic in dry-run output")
 	}

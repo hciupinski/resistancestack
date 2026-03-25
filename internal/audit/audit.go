@@ -3,6 +3,7 @@ package audit
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -119,15 +120,41 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
+	operatorAccessMode := cfg.HostHardening.UFWPolicy.OperatorAccessMode
+	if operatorAccessMode == "" {
+		operatorAccessMode = config.OperatorAccessModePublicHardened
+	}
 	if len(cfg.HostHardening.UFWPolicy.AdminAllowlist) == 0 {
+		severity := config.SeverityMedium
+		description := "No SSH admin allowlist is configured while public_hardened operator access is enabled."
+		risk := "SSH remains publicly reachable and relies on keys, hardening, and fail2ban rather than trusted source CIDRs."
+		recommendation := "Populate `host_hardening.ufw_policy.admin_allowlist` if you want to constrain SSH to known operator networks."
+		if operatorAccessMode == config.OperatorAccessModeAllowlistOnly {
+			severity = config.SeverityHigh
+			description = "operator_access_mode=allowlist_only is configured without a static admin allowlist."
+			risk = "SSH access may depend entirely on the current preserved session and will not be safely transferable to another operator or network."
+			recommendation = "Populate `host_hardening.ufw_policy.admin_allowlist` with trusted operator CIDRs before relying on allowlist_only mode."
+		}
 		add(Finding{
 			ID:             "host.ssh.no-allowlist",
 			Module:         "host-hardening",
-			Severity:       config.SeverityMedium,
-			Description:    "No SSH admin allowlist is configured.",
+			Severity:       severity,
+			Description:    description,
 			DetectedValue:  "empty",
-			Risk:           "The baseline cannot constrain SSH exposure to known operator networks.",
-			Recommendation: "Populate `host_hardening.ufw_policy.admin_allowlist` with trusted operator CIDRs.",
+			Risk:           risk,
+			Recommendation: recommendation,
+			AutoRemediable: false,
+		})
+	}
+	if operatorAccessMode == config.OperatorAccessModeAllowlistOnly && snapshot.CurrentSessionIP != "" && !ipInAllowlist(snapshot.CurrentSessionIP, cfg.HostHardening.UFWPolicy.AdminAllowlist) {
+		add(Finding{
+			ID:             "host.ssh.current-session-not-allowlisted",
+			Module:         "host-hardening",
+			Severity:       config.SeverityHigh,
+			Description:    "The current SSH operator session is outside the configured static admin allowlist.",
+			DetectedValue:  snapshot.CurrentSessionIP,
+			Risk:           "Strict allowlist mode may strand operators when their current source IP is not represented in the static policy.",
+			Recommendation: "Add the operator's current source IP or a stable admin CIDR to `host_hardening.ufw_policy.admin_allowlist`, or switch to `public_hardened` mode.",
 			AutoRemediable: false,
 		})
 	}
@@ -330,6 +357,23 @@ func containsSecurityWorkflow(workflows []string) bool {
 	for _, workflow := range workflows {
 		base := filepath.Base(workflow)
 		if strings.HasPrefix(base, "security-") {
+			return true
+		}
+	}
+	return false
+}
+
+func ipInAllowlist(rawIP string, allowlist []string) bool {
+	ip, err := netip.ParseAddr(strings.TrimSpace(rawIP))
+	if err != nil {
+		return false
+	}
+	for _, entry := range allowlist {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
+		if err != nil {
+			continue
+		}
+		if prefix.Contains(ip) {
 			return true
 		}
 	}
