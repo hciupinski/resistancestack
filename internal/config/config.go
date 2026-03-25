@@ -13,6 +13,13 @@ const (
 	CIProviderGitHub                 = "github_actions"
 	CIModeWarnOnly                   = "warn-only"
 	CIModeEnforced                   = "enforced"
+	CISARIFUploadModeAuto            = "auto"
+	CISARIFUploadModeEnabled         = "enabled"
+	CISARIFUploadModeDisabled        = "disabled"
+	RepoVisibilityUnknown            = "unknown"
+	RepoVisibilityPublic             = "public"
+	RepoVisibilityPrivate            = "private"
+	RepoVisibilityInternal           = "internal"
 	FormatText                       = "text"
 	FormatJSON                       = "json"
 	SeverityLow                      = "low"
@@ -111,11 +118,18 @@ type ObservabilityConfig struct {
 }
 
 type CIConfig struct {
-	Provider          string        `yaml:"provider"`
-	GenerateWorkflows bool          `yaml:"generate_workflows"`
-	Mode              string        `yaml:"mode"`
-	Schedule          string        `yaml:"schedule"`
-	Scans             CIScansConfig `yaml:"scans"`
+	Provider          string         `yaml:"provider"`
+	GenerateWorkflows bool           `yaml:"generate_workflows"`
+	Mode              string         `yaml:"mode"`
+	Schedule          string         `yaml:"schedule"`
+	GitHub            CIGitHubConfig `yaml:"github"`
+	Scans             CIScansConfig  `yaml:"scans"`
+}
+
+type CIGitHubConfig struct {
+	RepositoryVisibility string `yaml:"repository_visibility"`
+	CodeScanningEnabled  bool   `yaml:"code_scanning_enabled"`
+	SARIFUploadMode      string `yaml:"sarif_upload_mode"`
 }
 
 type CIScansConfig struct {
@@ -249,6 +263,11 @@ func Default(projectName string) Config {
 			GenerateWorkflows: true,
 			Mode:              CIModeWarnOnly,
 			Schedule:          "24 3 * * *",
+			GitHub: CIGitHubConfig{
+				RepositoryVisibility: RepoVisibilityUnknown,
+				CodeScanningEnabled:  false,
+				SARIFUploadMode:      CISARIFUploadModeAuto,
+			},
 			Scans: CIScansConfig{
 				Dependency: true,
 				Image:      true,
@@ -448,6 +467,9 @@ var defaultLineComments = map[string]string{
 	"ci.generate_workflows":                                  "Generate standalone security workflows in the repo.",
 	"ci.mode":                                                "Workflow enforcement mode. Options: warn-only, enforced.",
 	"ci.schedule":                                            "Cron schedule for recurring security scans.",
+	"ci.github.repository_visibility":                        "Repo visibility used for GitHub security features. Options: unknown, public, private, internal.",
+	"ci.github.code_scanning_enabled":                        "Set true when GitHub code scanning is already enabled for this repo.",
+	"ci.github.sarif_upload_mode":                            "SARIF upload strategy. Options: auto, enabled, disabled.",
 	"ci.scans.dependency":                                    "Enable dependency and SCA workflow generation.",
 	"ci.scans.image":                                         "Enable container and image scan workflow generation.",
 	"ci.scans.sbom":                                          "Enable SBOM generation workflow.",

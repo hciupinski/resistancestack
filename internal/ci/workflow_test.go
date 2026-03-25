@@ -126,6 +126,7 @@ func TestPreview_GeneratedWorkflowsAreValidYAMLAndUseResolvableActionRefs(t *tes
 		osvScannerWorkflowRef,
 		trivyActionRef,
 		"fail-on-vuln: false",
+		"upload-sarif: false",
 		"run: |\n          cat <<'EOF' > detected-container-inputs.txt",
 		"run: |\n          cat <<'EOF' > sbom-scope.txt",
 	} {
@@ -141,6 +142,78 @@ func TestPreview_GeneratedWorkflowsAreValidYAMLAndUseResolvableActionRefs(t *tes
 	}
 	if strings.Contains(joined, "aquasecurity/trivy-action@0.33.1") {
 		t.Fatal("expected trivy action ref to include the v prefix")
+	}
+}
+
+func TestPreview_PublicRepoEnablesSARIFUploadInAutoMode(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Default("demo")
+	cfg.CI.GitHub.RepositoryVisibility = config.RepoVisibilityPublic
+	cfg.CI.GitHub.CodeScanningEnabled = false
+	cfg.CI.GitHub.SARIFUploadMode = config.CISARIFUploadModeAuto
+
+	workflows, err := Preview(root, cfg)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	joined := joinWorkflowContent(workflows)
+	if !strings.Contains(joined, "upload-sarif: true") {
+		t.Fatal("expected SARIF upload enabled for public repositories in auto mode")
+	}
+}
+
+func TestPreview_CodeScanningEnabledEnablesSARIFUploadInAutoMode(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Default("demo")
+	cfg.CI.GitHub.RepositoryVisibility = config.RepoVisibilityPrivate
+	cfg.CI.GitHub.CodeScanningEnabled = true
+	cfg.CI.GitHub.SARIFUploadMode = config.CISARIFUploadModeAuto
+
+	workflows, err := Preview(root, cfg)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	joined := joinWorkflowContent(workflows)
+	if !strings.Contains(joined, "upload-sarif: true") {
+		t.Fatal("expected SARIF upload enabled when code scanning is explicitly enabled")
+	}
+}
+
+func TestPreview_DisabledSARIFModeForcesUploadOff(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Default("demo")
+	cfg.CI.GitHub.RepositoryVisibility = config.RepoVisibilityPublic
+	cfg.CI.GitHub.CodeScanningEnabled = true
+	cfg.CI.GitHub.SARIFUploadMode = config.CISARIFUploadModeDisabled
+
+	workflows, err := Preview(root, cfg)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	joined := joinWorkflowContent(workflows)
+	if !strings.Contains(joined, "upload-sarif: false") {
+		t.Fatal("expected disabled SARIF mode to force upload off")
+	}
+}
+
+func TestPreview_EnabledSARIFModeForcesUploadOn(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Default("demo")
+	cfg.CI.GitHub.RepositoryVisibility = config.RepoVisibilityUnknown
+	cfg.CI.GitHub.CodeScanningEnabled = false
+	cfg.CI.GitHub.SARIFUploadMode = config.CISARIFUploadModeEnabled
+
+	workflows, err := Preview(root, cfg)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	joined := joinWorkflowContent(workflows)
+	if !strings.Contains(joined, "upload-sarif: true") {
+		t.Fatal("expected enabled SARIF mode to force upload on")
 	}
 }
 

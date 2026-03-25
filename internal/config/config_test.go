@@ -137,6 +137,9 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
 		t.Fatal("expected inline comment for operator_access_mode")
 	}
+	if !strings.Contains(text, "sarif_upload_mode: auto # SARIF upload strategy. Options: auto, enabled, disabled.") {
+		t.Fatal("expected inline comment for ci.github.sarif_upload_mode")
+	}
 	if !strings.Contains(text, "- 22 # TCP port kept reachable on the host.") {
 		t.Fatal("expected inline comment for allowed_tcp_ports entries")
 	}
@@ -218,5 +221,8 @@ host_hardening:
 	}
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
 		t.Fatal("expected merged key to include inline comment")
+	}
+	if !strings.Contains(text, "sarif_upload_mode: auto # SARIF upload strategy. Options: auto, enabled, disabled.") {
+		t.Fatal("expected merged github SARIF config to include inline comment")
 	}
 }
