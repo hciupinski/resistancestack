@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 )
@@ -26,15 +27,27 @@ func runInit(args []string, out io.Writer) error {
 		projectName = filepath.Base(wd)
 	}
 
-	if _, err := os.Stat(*configPath); err == nil && !*force {
-		return fmt.Errorf("%s already exists; use --force to overwrite", *configPath)
-	}
-
-	cfg := config.Default(projectName)
-	if err := config.Save(*configPath, cfg); err != nil {
+	result, err := config.EnsureDefaultConfig(*configPath, projectName, *force)
+	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(out, "Created %s for security baseline project %q\n", *configPath, projectName)
+	switch {
+	case result.Created && *force:
+		fmt.Fprintf(out, "Overwrote %s with the latest security baseline defaults for project %q\n", *configPath, projectName)
+	case result.Created:
+		fmt.Fprintf(out, "Created %s for security baseline project %q\n", *configPath, projectName)
+	case len(result.Added) > 0:
+		fmt.Fprintf(
+			out,
+			"Updated %s with %d new configuration defaults for project %q: %s\n",
+			*configPath,
+			len(result.Added),
+			projectName,
+			strings.Join(result.Added, ", "),
+		)
+	default:
+		fmt.Fprintf(out, "%s is already up to date for project %q\n", *configPath, projectName)
+	}
 	return nil
 }
