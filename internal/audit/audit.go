@@ -71,6 +71,18 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: true,
 		})
 	}
+	if cfg.HostHardening.SSHHardening.RequirePasswordlessSudo && !snapshot.PasswordlessSudo {
+		add(Finding{
+			ID:             "host.sudo.passwordless-missing",
+			Module:         "host-hardening",
+			Severity:       config.SeverityHigh,
+			Description:    "The configured SSH user does not have passwordless sudo.",
+			DetectedValue:  cfg.Server.SSHUser,
+			Risk:           "Host hardening cannot safely apply SSH, UFW, fail2ban, or package changes without non-interactive privilege escalation.",
+			Recommendation: fmt.Sprintf("Grant passwordless sudo to `%s`, for example: `echo '%s ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/resistack-%s && sudo chmod 440 /etc/sudoers.d/resistack-%s`, then verify with `ssh %s@%s 'sudo -n true && echo OK'`.", cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.Host),
+			AutoRemediable: false,
+		})
+	}
 	if snapshot.Fail2ban.Status != "active" {
 		add(Finding{
 			ID:             "host.fail2ban.inactive",

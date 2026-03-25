@@ -12,6 +12,8 @@ func TestBuildApplyScript_ContainsGuardrailsAndBackups(t *testing.T) {
 	script := BuildApplyScript(cfg)
 
 	for _, expected := range []string{
+		"require_privileged_access",
+		"passwordless sudo is required for host hardening",
 		"validate_current_operator",
 		"backup_file /etc/ssh/sshd_config",
 		"sudo sshd -t",

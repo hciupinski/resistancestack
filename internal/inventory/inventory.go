@@ -13,20 +13,21 @@ import (
 )
 
 type Snapshot struct {
-	CollectedAt     time.Time         `json:"collected_at"`
-	Host            HostInfo          `json:"host"`
-	Proxy           ProxyInfo         `json:"proxy"`
-	Runtime         RuntimeInfo       `json:"runtime"`
-	ExposedPorts    []PortInfo        `json:"exposed_ports"`
-	TLSCertificates []TLSCertificate  `json:"tls_certificates"`
-	SSHUsers        []string          `json:"ssh_users"`
-	SudoUsers       []string          `json:"sudo_users"`
-	UFW             ServiceState      `json:"ufw"`
-	Fail2ban        ServiceState      `json:"fail2ban"`
-	LogLocations    []string          `json:"log_locations"`
-	Containers      []ContainerInfo   `json:"containers"`
-	Repo            RepoInfo          `json:"repo"`
-	Observability   ObservabilityInfo `json:"observability"`
+	CollectedAt      time.Time         `json:"collected_at"`
+	Host             HostInfo          `json:"host"`
+	Proxy            ProxyInfo         `json:"proxy"`
+	Runtime          RuntimeInfo       `json:"runtime"`
+	ExposedPorts     []PortInfo        `json:"exposed_ports"`
+	TLSCertificates  []TLSCertificate  `json:"tls_certificates"`
+	SSHUsers         []string          `json:"ssh_users"`
+	SudoUsers        []string          `json:"sudo_users"`
+	PasswordlessSudo bool              `json:"passwordless_sudo"`
+	UFW              ServiceState      `json:"ufw"`
+	Fail2ban         ServiceState      `json:"fail2ban"`
+	LogLocations     []string          `json:"log_locations"`
+	Containers       []ContainerInfo   `json:"containers"`
+	Repo             RepoInfo          `json:"repo"`
+	Observability    ObservabilityInfo `json:"observability"`
 }
 
 type HostInfo struct {
@@ -251,6 +252,12 @@ if sudo_line:
     members = sudo_line.split(":")[-1].split(",")
     sudo_users = [member for member in members if member]
 
+passwordless_sudo = False
+if text(["id", "-u"]) == "0":
+    passwordless_sudo = True
+else:
+    passwordless_sudo = run(["bash", "-lc", "sudo -n true >/dev/null 2>&1"]).returncode == 0
+
 log_locations = []
 for candidate in ("/var/log/nginx/access.log", "/var/log/nginx/error.log", "/var/log/fail2ban.log", "/var/log/auth.log", "/var/log/syslog", "/var/lib/docker/containers"):
     if os.path.exists(candidate):
@@ -288,6 +295,7 @@ snapshot = {
     "tls_certificates": certs,
     "ssh_users": ssh_users,
     "sudo_users": sudo_users,
+    "passwordless_sudo": passwordless_sudo,
     "ufw": {"enabled": "Status: active" in text(["bash", "-lc", "sudo ufw status 2>/dev/null || true"]), "status": text(["bash", "-lc", "sudo ufw status 2>/dev/null | head -n1 || true"])},
     "fail2ban": service_state("fail2ban"),
     "log_locations": log_locations,
