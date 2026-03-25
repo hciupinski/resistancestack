@@ -44,6 +44,11 @@ host_hardening:
     max_retry: 5
     recidive_enabled: true
     recidive_ban_time: 24h
+  ssl_certificates:
+    enabled: true
+    auto_issue: false
+    email: security@example.com
+    staging: false
   automatic_security_updates: true
   check_deploy_user: true
   check_docker_daemon: true
@@ -112,6 +117,15 @@ alerts:
 	if !cfg.HostHardening.UFWPolicy.PreserveCurrentSession {
 		t.Fatal("expected preserve_current_session=true")
 	}
+	if !cfg.HostHardening.SSLCertificates.Enabled {
+		t.Fatal("expected ssl_certificates.enabled=true")
+	}
+	if cfg.HostHardening.SSLCertificates.AutoIssue {
+		t.Fatal("expected ssl_certificates.auto_issue=false")
+	}
+	if cfg.HostHardening.SSLCertificates.Email != "security@example.com" {
+		t.Fatalf("unexpected ssl cert email: %q", cfg.HostHardening.SSLCertificates.Email)
+	}
 }
 
 func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
@@ -136,6 +150,9 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	}
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
 		t.Fatal("expected inline comment for operator_access_mode")
+	}
+	if !strings.Contains(text, "auto_issue: false # Automatically issue a missing or expired Let's Encrypt certificate during host hardening.") {
+		t.Fatal("expected inline comment for ssl_certificates.auto_issue")
 	}
 	if !strings.Contains(text, "sarif_upload_mode: auto # SARIF upload strategy. Options: auto, enabled, disabled.") {
 		t.Fatal("expected inline comment for ci.github.sarif_upload_mode")
@@ -210,6 +227,12 @@ host_hardening:
 	if !cfg.HostHardening.UFWPolicy.PreserveCurrentSession {
 		t.Fatal("expected preserve_current_session to be merged")
 	}
+	if !cfg.HostHardening.SSLCertificates.Enabled {
+		t.Fatal("expected ssl_certificates.enabled to be merged")
+	}
+	if cfg.HostHardening.SSLCertificates.Email != "security@example.com" {
+		t.Fatal("expected ssl_certificates.email to be merged")
+	}
 
 	updated, err := os.ReadFile(path)
 	if err != nil {
@@ -221,6 +244,12 @@ host_hardening:
 	}
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
 		t.Fatal("expected merged key to include inline comment")
+	}
+	if !strings.Contains(text, "ssl_certificates:") {
+		t.Fatal("expected ssl_certificates block to be merged")
+	}
+	if !strings.Contains(text, "email: security@example.com # Email address used for Let's Encrypt registration and expiry notices.") {
+		t.Fatal("expected merged ssl email comment")
 	}
 	if !strings.Contains(text, "sarif_upload_mode: auto # SARIF upload strategy. Options: auto, enabled, disabled.") {
 		t.Fatal("expected merged github SARIF config to include inline comment")

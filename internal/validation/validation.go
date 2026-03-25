@@ -2,8 +2,10 @@ package validation
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
@@ -15,6 +17,8 @@ var severityRank = map[string]int{
 	config.SeverityHigh:     3,
 	config.SeverityCritical: 4,
 }
+
+var hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 func Check(cfg config.Config) (warnings []string, errs []error) {
 	if strings.TrimSpace(cfg.ProjectName) == "" {
@@ -114,6 +118,20 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 		if cfg.HostHardening.Fail2ban.RecidiveEnabled && strings.TrimSpace(cfg.HostHardening.Fail2ban.RecidiveBanTime) == "" {
 			errs = append(errs, fmt.Errorf("host_hardening.fail2ban.recidive_ban_time is required when recidive_enabled=true"))
 		}
+	}
+	if cfg.HostHardening.SSLCertificates.Enabled {
+		primaryDomain := cfg.PrimaryDomain()
+		if primaryDomain == "" {
+			errs = append(errs, fmt.Errorf("host_hardening.ssl_certificates.enabled=true requires app_inventory.domains[0]"))
+		} else if err := validatePrimaryDomain(primaryDomain); err != nil {
+			errs = append(errs, fmt.Errorf("app_inventory.domains[0] %w", err))
+		}
+	}
+	if cfg.HostHardening.SSLCertificates.AutoIssue && !cfg.HostHardening.SSLCertificates.Enabled {
+		errs = append(errs, fmt.Errorf("host_hardening.ssl_certificates.auto_issue=true requires host_hardening.ssl_certificates.enabled=true"))
+	}
+	if cfg.HostHardening.SSLCertificates.AutoIssue && strings.TrimSpace(cfg.HostHardening.SSLCertificates.Email) == "" {
+		errs = append(errs, fmt.Errorf("host_hardening.ssl_certificates.email is required when host_hardening.ssl_certificates.auto_issue=true"))
 	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.CI.Provider)) {
@@ -216,6 +234,38 @@ func validateURL(field string, raw string) error {
 	}
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return fmt.Errorf("%s must include scheme and host", field)
+	}
+	return nil
+}
+
+func validatePrimaryDomain(raw string) error {
+	domain := strings.TrimSpace(raw)
+	if domain == "" {
+		return fmt.Errorf("must not be empty")
+	}
+	if net.ParseIP(domain) != nil {
+		return fmt.Errorf("must be a domain name, not an IP address")
+	}
+	if strings.HasSuffix(domain, ".") {
+		domain = strings.TrimSuffix(domain, ".")
+	}
+	labels := strings.Split(domain, ".")
+	if len(labels) < 2 {
+		return fmt.Errorf("must contain at least one dot")
+	}
+	for _, label := range labels {
+		if label == "" {
+			return fmt.Errorf("must not contain empty labels")
+		}
+		if len(label) > 63 {
+			return fmt.Errorf("contains a label longer than 63 characters")
+		}
+		if strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+			return fmt.Errorf("contains a label that starts or ends with '-'")
+		}
+		if !hostnameLabelPattern.MatchString(label) {
+			return fmt.Errorf("contains invalid hostname characters")
+		}
 	}
 	return nil
 }

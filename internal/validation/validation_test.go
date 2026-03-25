@@ -125,3 +125,45 @@ func TestCheck_EnabledSARIFWithoutSupportedRepoWarns(t *testing.T) {
 		t.Fatal("expected SARIF support warning")
 	}
 }
+
+func TestCheck_SSLCertificatesRequirePrimaryDomain(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.AppInventory.Domains = nil
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_AutoIssueRequiresEmail(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.HostHardening.SSLCertificates.AutoIssue = true
+	cfg.HostHardening.SSLCertificates.Email = ""
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_AutoIssueRequiresManagedSSL(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.HostHardening.SSLCertificates.Enabled = false
+	cfg.HostHardening.SSLCertificates.AutoIssue = true
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_PrimaryDomainMustNotBeIP(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.AppInventory.Domains = []string{"203.0.113.10"}
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}

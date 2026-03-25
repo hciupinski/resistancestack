@@ -8,7 +8,7 @@ It is built for the common case: one or a few servers, an existing app already r
 
 - host inventory for brownfield environments
 - security audit with prioritized findings and remediation hints
-- baseline host hardening for SSH, UFW, fail2ban, sudo, and security updates
+- baseline host hardening for SSH, UFW, fail2ban, sudo, security updates, and optional Let's Encrypt issuance for the primary domain
 - lightweight observability focused on security and runtime signals
 - standalone GitHub Actions workflows for dependency, image, SBOM, and secret scanning
 - host rollback for the latest hardening change
@@ -117,6 +117,7 @@ The audit produces findings with:
 Reports are written to `reporting.output_path`.
 
 If the configured `server.ssh_user` does not have passwordless sudo, the audit will report it explicitly and show the exact `sudoers` command to run before host hardening.
+If `host_hardening.ssl_certificates.enabled=true`, the audit also checks only the first entry in `app_inventory.domains` and expects a valid local certificate for that primary domain.
 
 ### 5. Apply Only What You Want
 
@@ -136,6 +137,7 @@ resistack apply host-hardening --dry-run
 ```
 
 If `host-hardening` detects that the configured SSH user does not have passwordless sudo, it stops immediately and prints the exact commands needed to grant it.
+If `host_hardening.ssl_certificates.auto_issue=true`, `host-hardening` will use `certbot certonly --standalone` to issue a missing or expired Let's Encrypt certificate for the primary domain and fail the run if issuance does not succeed.
 
 ### 6. Generate Security Workflows
 
@@ -225,6 +227,7 @@ Important examples:
 - `host_hardening.ssh_hardening`: SSH restrictions and operator guardrails
 - `host_hardening.ufw_policy`: default firewall policy, operator access mode, current-session preservation, and optional admin allowlist
 - `host_hardening.fail2ban`: ban windows and retry thresholds
+- `host_hardening.ssl_certificates`: managed local TLS checks and optional Let's Encrypt auto-issue for `app_inventory.domains[0]`
 - `observability.panel_bind`: local bind for the observability view
 - `ci.mode`: `warn-only` or `enforced`
 - `ci.github.sarif_upload_mode`: `auto`, `enabled`, or `disabled`

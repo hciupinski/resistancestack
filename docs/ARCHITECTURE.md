@@ -33,6 +33,7 @@ Success is measured as:
 - SSH hardening
 - UFW baseline
 - fail2ban baseline
+- optional Let's Encrypt issuance for the primary configured domain
 - deploy user and sudo checks
 - file backups before system changes
 - rollback of the last host operation

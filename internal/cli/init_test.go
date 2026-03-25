@@ -64,6 +64,9 @@ host_hardening:
 	if !strings.Contains(message, "host_hardening.ufw_policy.operator_access_mode") {
 		t.Fatalf("expected added key list in message, got %q", message)
 	}
+	if !strings.Contains(message, "host_hardening.ssl_certificates") {
+		t.Fatalf("expected ssl_certificates block in added key list, got %q", message)
+	}
 
 	updated, err := os.ReadFile(configPath)
 	if err != nil {
@@ -78,6 +81,9 @@ host_hardening:
 	}
 	if !strings.Contains(updatedRaw, "preserve_current_session: true # Temporarily preserve the current SSH session when needed.") {
 		t.Fatal("expected missing preserve_current_session to be added with inline comment")
+	}
+	if !strings.Contains(updatedRaw, "auto_issue: false # Automatically issue a missing or expired Let's Encrypt certificate during host hardening.") {
+		t.Fatal("expected missing ssl_certificates.auto_issue to be added with inline comment")
 	}
 }
 
