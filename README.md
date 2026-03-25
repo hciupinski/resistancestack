@@ -116,6 +116,8 @@ The audit produces findings with:
 
 Reports are written to `reporting.output_path`.
 
+If the configured `server.ssh_user` does not have passwordless sudo, the audit will report it explicitly and show the exact `sudoers` command to run before host hardening.
+
 ### 5. Apply Only What You Want
 
 Examples:
@@ -132,6 +134,8 @@ Preview changes first:
 ```bash
 resistack apply host-hardening --dry-run
 ```
+
+If `host-hardening` detects that the configured SSH user does not have passwordless sudo, it stops immediately and prints the exact commands needed to grant it.
 
 ### 6. Generate Security Workflows
 

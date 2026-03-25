@@ -139,6 +139,7 @@ func printInventory(out io.Writer, snapshot inventory.Snapshot) {
 	fmt.Fprintf(out, "Runtime: %s\n", snapshot.Runtime.Kind)
 	fmt.Fprintf(out, "UFW: %s\n", snapshot.UFW.Status)
 	fmt.Fprintf(out, "Fail2ban: %s\n", snapshot.Fail2ban.Status)
+	fmt.Fprintf(out, "Passwordless sudo: %t\n", snapshot.PasswordlessSudo)
 	if len(snapshot.Repo.Technologies) > 0 {
 		fmt.Fprintf(out, "Repo technologies: %s\n", stringsJoin(snapshot.Repo.Technologies))
 	}

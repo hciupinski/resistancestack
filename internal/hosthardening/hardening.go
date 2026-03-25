@@ -99,7 +99,26 @@ SSH_PORT=%d
 ALLOW_USERS=%s
 REQUIRE_PASSWORDLESS_SUDO=%s
 
-sudo -n true >/dev/null
+require_privileged_access() {
+  if [ "$(id -u)" -eq 0 ]; then
+    return 0
+  fi
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "[resistack] sudo is required for host hardening" >&2
+    exit 1
+  fi
+  if sudo -n true >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "[resistack] passwordless sudo is required for host hardening" >&2
+  echo "[resistack] configure it for user %s, for example:" >&2
+  echo "[resistack]   echo '%s ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/resistack-%s" >&2
+  echo "[resistack]   sudo chmod 440 /etc/sudoers.d/resistack-%s" >&2
+  echo "[resistack] then verify: sudo -n true && echo OK" >&2
+  exit 1
+}
+
+require_privileged_access
 
 timestamp="$(date -u +%%Y%%m%%d%%H%%M%%S)"
 op_dir="${BACKUP_ROOT}/${timestamp}"
@@ -156,7 +175,7 @@ PY
 }
 
 if [ "${REQUIRE_PASSWORDLESS_SUDO}" = "true" ]; then
-  sudo -n true >/dev/null
+  require_privileged_access
 fi
 
 if command -v apt-get >/dev/null 2>&1; then
@@ -229,6 +248,10 @@ echo "[resistack] host hardening applied"
 		cfg.Server.SSHPort,
 		shellQuote(allowUsers),
 		shellQuote(passwordlessCheck),
+		cfg.Server.SSHUser,
+		cfg.Server.SSHUser,
+		cfg.Server.SSHUser,
+		cfg.Server.SSHUser,
 		shellQuote(strings.Join(cfg.HostHardening.UFWPolicy.AdminAllowlist, ",")),
 		yesNo(!cfg.HostHardening.SSHHardening.DisableRootLogin, "prohibit-password", "no"),
 		yesNo(!cfg.HostHardening.SSHHardening.DisablePasswordAuth, "yes", "no"),
