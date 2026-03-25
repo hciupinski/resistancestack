@@ -123,8 +123,9 @@ func TestPreview_GeneratedWorkflowsAreValidYAMLAndUseResolvableActionRefs(t *tes
 
 	joined := joinWorkflowContent(workflows)
 	for _, expected := range []string{
-		osvScannerActionRef,
+		osvScannerWorkflowRef,
 		trivyActionRef,
+		"fail-on-vuln: false",
 		"run: |\n          cat <<'EOF' > detected-container-inputs.txt",
 		"run: |\n          cat <<'EOF' > sbom-scope.txt",
 	} {
@@ -134,6 +135,9 @@ func TestPreview_GeneratedWorkflowsAreValidYAMLAndUseResolvableActionRefs(t *tes
 	}
 	if strings.Contains(joined, "google/osv-scanner-action/osv-scanner-action@v2") {
 		t.Fatal("expected broken OSV action ref to be removed")
+	}
+	if strings.Contains(joined, "google/osv-scanner-action@v2.3.0") {
+		t.Fatal("expected OSV reusable workflow ref instead of action ref")
 	}
 	if strings.Contains(joined, "aquasecurity/trivy-action@0.33.1") {
 		t.Fatal("expected trivy action ref to include the v prefix")

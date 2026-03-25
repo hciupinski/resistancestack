@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	osvScannerActionRef = "google/osv-scanner-action@v2.3.0"
-	trivyActionRef      = "aquasecurity/trivy-action@v0.33.1"
+	osvScannerWorkflowRef = "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.0"
+	trivyActionRef        = "aquasecurity/trivy-action@v0.33.1"
 )
 
 type NodeProject struct {
@@ -240,14 +240,17 @@ func buildDependencyWorkflow(cfg config.Config, profile TechProfile) string {
 		jobs = append(jobs, fmt.Sprintf(`
   osv:
     name: OSV scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: %s
-        continue-on-error: %t
-        with:
-          scan-args: -r .
-`, osvScannerActionRef, continueOnError))
+    uses: "%s"
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    with:
+      fail-on-vuln: %t
+      scan-args: |-
+        --recursive
+        ./
+`, osvScannerWorkflowRef, !continueOnError))
 	}
 	if cfg.CI.Scans.License {
 		jobs = append(jobs, fmt.Sprintf(`
