@@ -27,6 +27,21 @@ func TestBuildApplyScript_ContainsGuardrailsAndBackups(t *testing.T) {
 	}
 }
 
+func TestBuildApplyScript_CleansBootstrapRulesWithoutBrokenPythonPipe(t *testing.T) {
+	cfg := config.Default("demo")
+	script := BuildApplyScript(cfg)
+
+	if !strings.Contains(script, `status_output="$(sudo ufw status numbered 2>/dev/null || true)"`) {
+		t.Fatal("expected ufw status capture to tolerate inactive firewall state")
+	}
+	if !strings.Contains(script, `printf '%s\n' "${status_output}" | python3 -c '`) {
+		t.Fatal("expected bootstrap cleanup parser to read ufw status from stdin via python -c")
+	}
+	if strings.Contains(script, `sudo ufw status numbered 2>/dev/null | python3 - <<'PY'`) {
+		t.Fatal("expected broken python heredoc pipeline to be removed")
+	}
+}
+
 func TestBuildRollbackScript_RestoresLastBackup(t *testing.T) {
 	cfg := config.Default("demo")
 	script := BuildRollbackScript(cfg)

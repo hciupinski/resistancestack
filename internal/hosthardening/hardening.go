@@ -316,9 +316,11 @@ append_csv() {
 }
 
 cleanup_bootstrap_rules() {
+  local status_output
   local numbers
+  status_output="$(sudo ufw status numbered 2>/dev/null || true)"
   numbers="$(
-    sudo ufw status numbered 2>/dev/null | python3 - <<'PY'
+    printf '%%s\n' "${status_output}" | python3 -c '
 import re
 import sys
 
@@ -331,7 +333,7 @@ for line in sys.stdin:
         matches.append(int(match.group(1)))
 for item in reversed(matches):
     print(item)
-PY
+'
   )"
   if [ -z "${numbers}" ]; then
     return 0
