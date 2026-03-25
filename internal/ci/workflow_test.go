@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/hciupinski/resistancestack/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 func TestDetectTech_MixedRepo(t *testing.T) {
@@ -83,6 +84,62 @@ func TestGenerate_CreatesStandaloneSecurityWorkflows(t *testing.T) {
 	}
 }
 
+func TestPreview_GeneratedWorkflowsAreValidYAMLAndUseResolvableActionRefs(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "ui"), 0o755); err != nil {
+		t.Fatalf("mkdir ui: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ui", "package.json"), []byte(`{"name":"ui","dependencies":{"next":"15.0.0"}}`), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "src", "Public.Api"), 0o755); err != nil {
+		t.Fatalf("mkdir api: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "src", "Public.Api", "Public.Api.csproj"), []byte(`<Project />`), 0o644); err != nil {
+		t.Fatalf("write csproj: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "ui", "Dockerfile"), []byte("FROM node:22\n"), 0o644); err != nil {
+		t.Fatalf("write dockerfile: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "infra", "docker", "prod"), 0o755); err != nil {
+		t.Fatalf("mkdir compose dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "infra", "docker", "prod", "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatalf("write compose file: %v", err)
+	}
+
+	cfg := config.Default("demo")
+	workflows, err := Preview(root, cfg)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+
+	for _, wf := range workflows {
+		var parsed yaml.Node
+		if err := yaml.Unmarshal([]byte(wf.Content), &parsed); err != nil {
+			t.Fatalf("workflow %s should be valid yaml: %v\n%s", wf.Name, err, wf.Content)
+		}
+	}
+
+	joined := joinWorkflowContent(workflows)
+	for _, expected := range []string{
+		osvScannerActionRef,
+		trivyActionRef,
+		"run: |\n          cat <<'EOF' > detected-container-inputs.txt",
+		"run: |\n          cat <<'EOF' > sbom-scope.txt",
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("expected %q in generated workflows", expected)
+		}
+	}
+	if strings.Contains(joined, "google/osv-scanner-action/osv-scanner-action@v2") {
+		t.Fatal("expected broken OSV action ref to be removed")
+	}
+	if strings.Contains(joined, "aquasecurity/trivy-action@0.33.1") {
+		t.Fatal("expected trivy action ref to include the v prefix")
+	}
+}
+
 func TestValidate_FindsOutdatedWorkflow(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755); err != nil {
@@ -100,4 +157,12 @@ func TestValidate_FindsOutdatedWorkflow(t *testing.T) {
 	if len(result.Outdated) == 0 && len(result.Missing) == 0 {
 		t.Fatal("expected missing or outdated workflows")
 	}
+}
+
+func joinWorkflowContent(workflows []WorkflowFile) string {
+	parts := make([]string, 0, len(workflows))
+	for _, wf := range workflows {
+		parts = append(parts, wf.Content)
+	}
+	return strings.Join(parts, "\n---\n")
 }
