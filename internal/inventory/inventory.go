@@ -57,9 +57,19 @@ type PortInfo struct {
 }
 
 type TLSCertificate struct {
-	Domain    string `json:"domain"`
-	ExpiresAt string `json:"expires_at"`
+	Path      string   `json:"path"`
+	Names     []string `json:"names"`
+	ExpiresAt string   `json:"expires_at"`
+	Valid     bool     `json:"valid"`
 }
+
+type TLSCertificateStatus string
+
+const (
+	TLSCertificateStatusMissing TLSCertificateStatus = "missing"
+	TLSCertificateStatusInvalid TLSCertificateStatus = "invalid"
+	TLSCertificateStatusValid   TLSCertificateStatus = "valid"
+)
 
 type ServiceState struct {
 	Enabled bool   `json:"enabled"`
@@ -239,9 +249,28 @@ for line in text(["bash", "-lc", "ss -tulpnH 2>/dev/null || true"]).splitlines()
 
 certs = []
 for fullchain in glob.glob("/etc/letsencrypt/live/*/fullchain.pem"):
-    domain = fullchain.split("/")[-2]
-    expires = text(["bash", "-lc", f"openssl x509 -in {fullchain!r} -noout -enddate 2>/dev/null | cut -d= -f2-"])
-    certs.append({"domain": domain, "expires_at": expires})
+    enddate_output = text(["openssl", "x509", "-in", fullchain, "-noout", "-enddate"])
+    expires = enddate_output.split("=", 1)[1] if "=" in enddate_output else ""
+    san_output = text(["openssl", "x509", "-in", fullchain, "-noout", "-ext", "subjectAltName"])
+    subject_output = text(["openssl", "x509", "-in", fullchain, "-noout", "-subject", "-nameopt", "RFC2253"])
+
+    names = []
+    for raw_name in re.findall(r"DNS:([^,\s]+)", san_output):
+        name = raw_name.strip()
+        if name and name not in names:
+            names.append(name)
+    subject = subject_output.strip()
+    if subject.startswith("subject="):
+        subject = subject.split("=", 1)[1]
+    for part in subject.split(","):
+        if not part.startswith("CN="):
+            continue
+        name = part.split("=", 1)[1].strip()
+        if name and name not in names:
+            names.append(name)
+
+    valid = run(["openssl", "x509", "-in", fullchain, "-noout", "-checkend", "0"]).returncode == 0
+    certs.append({"path": fullchain, "names": names, "expires_at": expires, "valid": valid})
 
 ssh_users = []
 for line in text(["bash", "-lc", "getent passwd | awk -F: '$7 !~ /(nologin|false)$/ {print $1}'"]).splitlines():
@@ -347,4 +376,55 @@ func RepoRelative(root string, path string) string {
 		return filepath.ToSlash(path)
 	}
 	return filepath.ToSlash(rel)
+}
+
+func LookupCertificateForDomain(certs []TLSCertificate, domain string) (TLSCertificate, TLSCertificateStatus) {
+	target := strings.ToLower(strings.TrimSpace(domain))
+	if target == "" {
+		return TLSCertificate{}, TLSCertificateStatusMissing
+	}
+
+	var invalidMatch TLSCertificate
+	for _, cert := range certs {
+		if !certificateMatchesDomain(cert, target) {
+			continue
+		}
+		if cert.Valid {
+			return cert, TLSCertificateStatusValid
+		}
+		if invalidMatch.Path == "" {
+			invalidMatch = cert
+		}
+	}
+	if invalidMatch.Path != "" {
+		return invalidMatch, TLSCertificateStatusInvalid
+	}
+	return TLSCertificate{}, TLSCertificateStatusMissing
+}
+
+func certificateMatchesDomain(cert TLSCertificate, domain string) bool {
+	for _, rawName := range cert.Names {
+		name := strings.ToLower(strings.TrimSpace(rawName))
+		if name == "" {
+			continue
+		}
+		if name == domain {
+			return true
+		}
+		if wildcardMatchesDomain(name, domain) {
+			return true
+		}
+	}
+	return false
+}
+
+func wildcardMatchesDomain(pattern string, domain string) bool {
+	if !strings.HasPrefix(pattern, "*.") {
+		return false
+	}
+	suffix := strings.TrimPrefix(pattern, "*.")
+	if suffix == "" || !strings.HasSuffix(domain, "."+suffix) {
+		return false
+	}
+	return strings.Count(domain, ".") == strings.Count(suffix, ".")+1
 }

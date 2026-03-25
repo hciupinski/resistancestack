@@ -61,14 +61,15 @@ type ServerConfig struct {
 }
 
 type HostHardeningConfig struct {
-	Enabled                  bool               `yaml:"enabled"`
-	SSHHardening             SSHHardeningConfig `yaml:"ssh_hardening"`
-	UFWPolicy                UFWPolicyConfig    `yaml:"ufw_policy"`
-	Fail2ban                 Fail2banConfig     `yaml:"fail2ban"`
-	AutomaticSecurityUpdates bool               `yaml:"automatic_security_updates"`
-	CheckDeployUser          bool               `yaml:"check_deploy_user"`
-	CheckDockerDaemon        bool               `yaml:"check_docker_daemon"`
-	BackupDir                string             `yaml:"backup_dir"`
+	Enabled                  bool                  `yaml:"enabled"`
+	SSHHardening             SSHHardeningConfig    `yaml:"ssh_hardening"`
+	UFWPolicy                UFWPolicyConfig       `yaml:"ufw_policy"`
+	Fail2ban                 Fail2banConfig        `yaml:"fail2ban"`
+	SSLCertificates          SSLCertificatesConfig `yaml:"ssl_certificates"`
+	AutomaticSecurityUpdates bool                  `yaml:"automatic_security_updates"`
+	CheckDeployUser          bool                  `yaml:"check_deploy_user"`
+	CheckDockerDaemon        bool                  `yaml:"check_docker_daemon"`
+	BackupDir                string                `yaml:"backup_dir"`
 }
 
 type SSHHardeningConfig struct {
@@ -99,6 +100,13 @@ type Fail2banConfig struct {
 	MaxRetry        int    `yaml:"max_retry"`
 	RecidiveEnabled bool   `yaml:"recidive_enabled"`
 	RecidiveBanTime string `yaml:"recidive_ban_time"`
+}
+
+type SSLCertificatesConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	AutoIssue bool   `yaml:"auto_issue"`
+	Email     string `yaml:"email"`
+	Staging   bool   `yaml:"staging"`
 }
 
 type AppInventoryConfig struct {
@@ -238,6 +246,12 @@ func Default(projectName string) Config {
 				MaxRetry:        5,
 				RecidiveEnabled: true,
 				RecidiveBanTime: "24h",
+			},
+			SSLCertificates: SSLCertificatesConfig{
+				Enabled:   true,
+				AutoIssue: false,
+				Email:     "security@example.com",
+				Staging:   false,
 			},
 			AutomaticSecurityUpdates: true,
 			CheckDeployUser:          true,
@@ -418,6 +432,13 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+func (cfg Config) PrimaryDomain() string {
+	if len(cfg.AppInventory.Domains) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(cfg.AppInventory.Domains[0])
+}
+
 var defaultLineComments = map[string]string{
 	"project_name":             "Identifier used in reports, generated files, and remote assets.",
 	"mode.strategy":            "Workflow mode. Options: audit_then_apply.",
@@ -449,6 +470,10 @@ var defaultLineComments = map[string]string{
 	"host_hardening.fail2ban.max_retry":                      "Failed attempts allowed before a ban.",
 	"host_hardening.fail2ban.recidive_enabled":               "Enable longer recidive bans for repeat offenders.",
 	"host_hardening.fail2ban.recidive_ban_time":              "Ban duration for recidive offenders.",
+	"host_hardening.ssl_certificates.enabled":                "Manage local TLS certificate checks for the primary app_inventory domain.",
+	"host_hardening.ssl_certificates.auto_issue":             "Automatically issue a missing or expired Let's Encrypt certificate during host hardening.",
+	"host_hardening.ssl_certificates.email":                  "Email address used for Let's Encrypt registration and expiry notices.",
+	"host_hardening.ssl_certificates.staging":                "Use the Let's Encrypt staging environment for test issuance.",
 	"host_hardening.automatic_security_updates":              "Enable automatic security updates on the host.",
 	"host_hardening.check_deploy_user":                       "Verify the configured SSH user exists on the server.",
 	"host_hardening.check_docker_daemon":                     "Inspect docker daemon settings for risky listeners.",

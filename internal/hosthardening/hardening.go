@@ -182,6 +182,7 @@ func BuildApplyScript(cfg config.Config) string {
 	if len(cfg.HostHardening.SSHHardening.AllowUsers) > 0 {
 		allowUsers = strings.Join(cfg.HostHardening.SSHHardening.AllowUsers, " ")
 	}
+	primaryDomain := cfg.PrimaryDomain()
 
 	ufwTCPRules := strings.Builder{}
 	for _, port := range cfg.HostHardening.UFWPolicy.AllowedTCPPorts {
@@ -198,6 +199,11 @@ func BuildApplyScript(cfg config.Config) string {
 	passwordlessCheck := "false"
 	if cfg.HostHardening.SSHHardening.RequirePasswordlessSudo {
 		passwordlessCheck = "true"
+	}
+
+	packageList := []string{"ufw", "fail2ban"}
+	if cfg.HostHardening.SSLCertificates.Enabled {
+		packageList = append(packageList, "certbot")
 	}
 
 	automaticUpdates := ""
@@ -230,6 +236,13 @@ fi
 		operatorAccessMode = config.OperatorAccessModePublicHardened
 	}
 
+	sslWorkflow := ""
+	if cfg.HostHardening.SSLCertificates.Enabled {
+		sslWorkflow = `
+ensure_managed_certificate
+`
+	}
+
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
@@ -240,6 +253,11 @@ REQUIRE_PASSWORDLESS_SUDO=%s
 STATIC_ADMIN_ALLOWLIST=%s
 OPERATOR_ACCESS_MODE=%s
 PRESERVE_CURRENT_SESSION=%s
+SSL_CERTIFICATES_ENABLED=%s
+SSL_CERTIFICATES_AUTO_ISSUE=%s
+SSL_PRIMARY_DOMAIN=%s
+SSL_EMAIL=%s
+SSL_STAGING=%s
 
 require_privileged_access() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -355,6 +373,154 @@ apply_static_allowlist_rules() {
   done
 }
 
+STOPPED_PROXY_SERVICES=""
+
+restore_proxy_services() {
+  local service
+  IFS=',' read -r -a services <<< "${STOPPED_PROXY_SERVICES}"
+  for service in "${services[@]}"; do
+    [ -z "${service}" ] && continue
+    sudo systemctl start "${service}" >/dev/null 2>&1 || true
+  done
+  STOPPED_PROXY_SERVICES=""
+}
+
+trap restore_proxy_services EXIT
+
+port_80_in_use() {
+  ss -tulpnH 2>/dev/null | python3 -c '
+import sys
+
+for line in sys.stdin:
+    parts = line.split()
+    if len(parts) < 5:
+        continue
+    local = parts[4]
+    if local.endswith(":80") or local.endswith("]:80") or local == "*:80":
+        raise SystemExit(0)
+raise SystemExit(1)
+'
+}
+
+find_valid_certificate_path() {
+  python3 - "$1" <<'PY'
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+target = sys.argv[1].strip().lower()
+if not target:
+    raise SystemExit(1)
+
+def text(command):
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+def covers_domain(name, domain):
+    name = name.strip().lower()
+    if not name:
+        return False
+    if name == domain:
+        return True
+    if not name.startswith("*."):
+        return False
+    suffix = name[2:]
+    if not suffix or not domain.endswith("." + suffix):
+        return False
+    return domain.count(".") == suffix.count(".") + 1
+
+for fullchain in sorted(Path("/etc/letsencrypt/live").glob("*/fullchain.pem")):
+    names = []
+    san_output = text(["openssl", "x509", "-in", str(fullchain), "-noout", "-ext", "subjectAltName"])
+    subject_output = text(["openssl", "x509", "-in", str(fullchain), "-noout", "-subject", "-nameopt", "RFC2253"])
+    for raw_name in re.findall(r"DNS:([^,\s]+)", san_output):
+        name = raw_name.strip()
+        if name and name not in names:
+            names.append(name)
+    subject = subject_output.strip()
+    if subject.startswith("subject="):
+        subject = subject.split("=", 1)[1]
+    for part in subject.split(","):
+        if not part.startswith("CN="):
+            continue
+        name = part.split("=", 1)[1].strip()
+        if name and name not in names:
+            names.append(name)
+    if not any(covers_domain(name, target) for name in names):
+        continue
+    if subprocess.run(["openssl", "x509", "-in", str(fullchain), "-noout", "-checkend", "0"], capture_output=True).returncode == 0:
+        print(fullchain)
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+stop_known_proxy_for_certbot() {
+  local service
+  for service in nginx traefik; do
+    if ! sudo systemctl is-active --quiet "${service}"; then
+      continue
+    fi
+    echo "[resistack] stopping ${service} to free tcp/80 for certbot"
+    sudo systemctl stop "${service}"
+    STOPPED_PROXY_SERVICES="$(append_csv "${STOPPED_PROXY_SERVICES}" "${service}")"
+    if ! port_80_in_use; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+ensure_managed_certificate() {
+  if [ "${SSL_CERTIFICATES_ENABLED}" != "true" ] || [ -z "${SSL_PRIMARY_DOMAIN}" ]; then
+    return 0
+  fi
+
+  if certificate_path="$(find_valid_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+    echo "[resistack] valid TLS certificate already present for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
+    return 0
+  fi
+
+  if [ "${SSL_CERTIFICATES_AUTO_ISSUE}" != "true" ]; then
+    echo "[resistack] skipping Let's Encrypt issuance for ${SSL_PRIMARY_DOMAIN}: auto_issue=false" >&2
+    return 0
+  fi
+
+  if port_80_in_use && ! stop_known_proxy_for_certbot; then
+    echo "[resistack] tcp/80 is in use by an unmanaged process; stop it manually before requesting a Let's Encrypt certificate for ${SSL_PRIMARY_DOMAIN}" >&2
+    exit 1
+  fi
+  if port_80_in_use; then
+    echo "[resistack] tcp/80 is still busy after stopping known proxies; cannot run certbot standalone for ${SSL_PRIMARY_DOMAIN}" >&2
+    exit 1
+  fi
+
+  certbot_args=(
+    certonly
+    --standalone
+    --non-interactive
+    --agree-tos
+    --email "${SSL_EMAIL}"
+    -d "${SSL_PRIMARY_DOMAIN}"
+  )
+  if [ "${SSL_STAGING}" = "true" ]; then
+    certbot_args+=(--staging)
+  fi
+
+  echo "[resistack] issuing Let's Encrypt certificate for ${SSL_PRIMARY_DOMAIN}"
+  sudo certbot "${certbot_args[@]}"
+  restore_proxy_services
+
+  if ! certificate_path="$(find_valid_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+    echo "[resistack] certbot finished but no valid certificate was detected for ${SSL_PRIMARY_DOMAIN}" >&2
+    exit 1
+  fi
+  echo "[resistack] certificate ready for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
+}
+
 require_privileged_access
 
 timestamp="$(date -u +%%Y%%m%%d%%H%%M%%S)"
@@ -413,7 +579,7 @@ fi
 
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update -y
-  sudo apt-get install -y ufw fail2ban
+  sudo apt-get install -y %s
 else
   echo "unsupported package manager for host hardening" >&2
   exit 1
@@ -526,6 +692,7 @@ fi
 %s%s
 sudo ufw --force enable
 
+%s
 sudo systemctl restart fail2ban
 restart_ssh_service
 
@@ -545,10 +712,16 @@ echo "[resistack] host hardening applied"
 		shellQuote(strings.Join(sanitizeAllowlist(cfg.HostHardening.UFWPolicy.AdminAllowlist), ",")),
 		shellQuote(operatorAccessMode),
 		shellQuote(boolString(cfg.HostHardening.UFWPolicy.PreserveCurrentSession)),
+		shellQuote(boolString(cfg.HostHardening.SSLCertificates.Enabled)),
+		shellQuote(boolString(cfg.HostHardening.SSLCertificates.AutoIssue)),
+		shellQuote(primaryDomain),
+		shellQuote(cfg.HostHardening.SSLCertificates.Email),
+		shellQuote(boolString(cfg.HostHardening.SSLCertificates.Staging)),
 		cfg.Server.SSHUser,
 		cfg.Server.SSHUser,
 		cfg.Server.SSHUser,
 		cfg.Server.SSHUser,
+		strings.Join(packageList, " "),
 		yesNo(!cfg.HostHardening.SSHHardening.DisableRootLogin, "prohibit-password", "no"),
 		yesNo(!cfg.HostHardening.SSHHardening.DisablePasswordAuth, "yes", "no"),
 		cfg.HostHardening.SSHHardening.MaxAuthTries,
@@ -563,6 +736,7 @@ echo "[resistack] host hardening applied"
 		cfg.HostHardening.UFWPolicy.DefaultOutgoing,
 		ufwTCPRules.String(),
 		ufwUDPRules.String(),
+		sslWorkflow,
 		automaticUpdates,
 		dockerCheck,
 		cfg.HostHardening.CheckDeployUser,

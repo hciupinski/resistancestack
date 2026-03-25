@@ -39,6 +39,11 @@ host_hardening:
     max_retry: 5
     recidive_enabled: true
     recidive_ban_time: "24h"
+  ssl_certificates:
+    enabled: true
+    auto_issue: false
+    email: "security@example.com"
+    staging: false
   automatic_security_updates: true
   check_deploy_user: true
   check_docker_daemon: true

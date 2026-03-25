@@ -170,17 +170,31 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if len(snapshot.TLSCertificates) == 0 && len(cfg.AppInventory.Domains) > 0 {
-		add(Finding{
-			ID:             "inventory.tls.missing",
-			Module:         "inventory-audit",
-			Severity:       config.SeverityMedium,
-			Description:    "No local TLS certificate inventory was detected for configured domains.",
-			DetectedValue:  strings.Join(cfg.AppInventory.Domains, ", "),
-			Risk:           "Certificate expiry and TLS provenance cannot be assessed from the host.",
-			Recommendation: "Confirm certificate ownership or document the external TLS termination path.",
-			AutoRemediable: false,
-		})
+	primaryDomain := cfg.PrimaryDomain()
+	if cfg.HostHardening.SSLCertificates.Enabled && primaryDomain != "" {
+		matchedCert, status := inventory.LookupCertificateForDomain(snapshot.TLSCertificates, primaryDomain)
+		if status != inventory.TLSCertificateStatusValid {
+			detectedValue := "missing"
+			description := "No valid local TLS certificate was detected for the primary managed domain."
+			recommendation := fmt.Sprintf("Provision a valid local certificate for `%s` or disable `host_hardening.ssl_certificates.enabled` if TLS terminates externally.", primaryDomain)
+			if cfg.HostHardening.SSLCertificates.AutoIssue {
+				recommendation = fmt.Sprintf("Run `resistack apply host-hardening` to issue a Let's Encrypt certificate for `%s`.", primaryDomain)
+			}
+			if status == inventory.TLSCertificateStatusInvalid {
+				detectedValue = fmt.Sprintf("expired or invalid: %s", matchedCert.ExpiresAt)
+				description = "The primary managed domain has a local TLS certificate, but it is expired or invalid."
+			}
+			add(Finding{
+				ID:             "inventory.tls.primary-domain.invalid",
+				Module:         "inventory-audit",
+				Severity:       config.SeverityMedium,
+				Description:    description,
+				DetectedValue:  detectedValue,
+				Risk:           "TLS availability for the primary domain depends on a certificate that is missing, expired, or otherwise invalid on the VPS.",
+				Recommendation: recommendation,
+				AutoRemediable: cfg.HostHardening.SSLCertificates.AutoIssue,
+			})
+		}
 	}
 	if !snapshot.Observability.Enabled {
 		add(Finding{

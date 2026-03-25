@@ -76,3 +76,24 @@ func TestBuildRollbackScript_RestoresLastBackup(t *testing.T) {
 		t.Fatal("expected rollback script to reuse SSH restart fallback helper")
 	}
 }
+
+func TestBuildApplyScript_IncludesManagedSSLCertWorkflow(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.HostHardening.SSLCertificates.AutoIssue = true
+	script := BuildApplyScript(cfg)
+
+	for _, expected := range []string{
+		"SSL_CERTIFICATES_ENABLED='true'",
+		"SSL_CERTIFICATES_AUTO_ISSUE='true'",
+		"SSL_PRIMARY_DOMAIN='app.example.com'",
+		"sudo apt-get install -y ufw fail2ban certbot",
+		"find_valid_certificate_path()",
+		"stop_known_proxy_for_certbot()",
+		"sudo certbot \"${certbot_args[@]}\"",
+		"ensure_managed_certificate",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("expected %q in script", expected)
+		}
+	}
+}
