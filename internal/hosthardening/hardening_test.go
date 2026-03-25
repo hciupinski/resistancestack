@@ -90,6 +90,8 @@ func TestBuildApplyScript_IncludesManagedSSLCertWorkflow(t *testing.T) {
 		"find_matching_certificate_path()",
 		"certificate_is_valid()",
 		"stop_known_proxy_for_certbot()",
+		"selected certificate lineage for ${SSL_PRIMARY_DOMAIN}",
+		"selected certificate lineage for post-issue verification",
 		"sudo certbot \"${certbot_args[@]}\"",
 		"certbot_args+=(--cert-name \"${cert_name}\" --force-renewal)",
 		"ensure_managed_certificate",

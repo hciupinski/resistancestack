@@ -49,3 +49,27 @@ func TestLookupCertificateForDomain_MatchesWildcardCoverage(t *testing.T) {
 		t.Fatalf("expected wildcard match to be valid, got %s", status)
 	}
 }
+
+func TestLookupCertificateForDomain_PrefersValidCertOverExpiredMatch(t *testing.T) {
+	cert, status := LookupCertificateForDomain([]TLSCertificate{
+		{
+			Path:      "/etc/letsencrypt/live/app.example.com/fullchain.pem",
+			Names:     []string{"app.example.com"},
+			ExpiresAt: "Jan  1 00:00:00 2024 GMT",
+			Valid:     false,
+		},
+		{
+			Path:      "/etc/letsencrypt/live/app.example.com-0001/fullchain.pem",
+			Names:     []string{"app.example.com"},
+			ExpiresAt: "Jan  1 00:00:00 2030 GMT",
+			Valid:     true,
+		},
+	}, "app.example.com")
+
+	if status != TLSCertificateStatusValid {
+		t.Fatalf("expected valid status, got %s", status)
+	}
+	if cert.Path != "/etc/letsencrypt/live/app.example.com-0001/fullchain.pem" {
+		t.Fatalf("expected valid lineage to be preferred, got %s", cert.Path)
+	}
+}

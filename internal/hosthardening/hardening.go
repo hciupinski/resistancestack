@@ -432,6 +432,7 @@ def covers_domain(name, domain):
         return False
     return domain.count(".") == suffix.count(".") + 1
 
+fallback = ""
 for fullchain in sorted(Path("/etc/letsencrypt/live").glob("*/fullchain.pem")):
     names = []
     san_output = text(["openssl", "x509", "-in", str(fullchain), "-noout", "-ext", "subjectAltName"])
@@ -451,7 +452,13 @@ for fullchain in sorted(Path("/etc/letsencrypt/live").glob("*/fullchain.pem")):
             names.append(name)
     if not any(covers_domain(name, target) for name in names):
         continue
-    print(fullchain)
+    if subprocess.run(["openssl", "x509", "-in", str(fullchain), "-noout", "-checkend", "0"], capture_output=True).returncode == 0:
+        print(fullchain)
+        raise SystemExit(0)
+    if not fallback:
+        fallback = str(fullchain)
+if fallback:
+    print(fallback)
     raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -488,6 +495,7 @@ ensure_managed_certificate() {
   certificate_exists="false"
   if certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
     certificate_exists="true"
+    echo "[resistack] selected certificate lineage for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
     if certificate_is_valid "${certificate_path}"; then
       echo "[resistack] valid TLS certificate already present for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
       return 0
@@ -529,7 +537,12 @@ ensure_managed_certificate() {
   sudo certbot "${certbot_args[@]}"
   restore_proxy_services
 
-  if ! certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")" || ! certificate_is_valid "${certificate_path}"; then
+  if ! certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+    echo "[resistack] no certificate lineage matched ${SSL_PRIMARY_DOMAIN} after certbot run" >&2
+    exit 1
+  fi
+  echo "[resistack] selected certificate lineage for post-issue verification: ${certificate_path}"
+  if ! certificate_is_valid "${certificate_path}"; then
     echo "[resistack] certbot finished but no valid certificate was detected for ${SSL_PRIMARY_DOMAIN}" >&2
     exit 1
   fi
