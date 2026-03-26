@@ -1,178 +1,12 @@
 package inventory
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/hciupinski/resistancestack/internal/config"
+	"github.com/hciupinski/resistancestack/internal/scriptutil"
 	"path/filepath"
 	"strings"
-	"time"
-
-	"github.com/hciupinski/resistancestack/internal/ci"
-	"github.com/hciupinski/resistancestack/internal/config"
-	"github.com/hciupinski/resistancestack/internal/remote"
 )
-
-type Snapshot struct {
-	CollectedAt      time.Time         `json:"collected_at"`
-	CurrentSessionIP string            `json:"current_session_ip"`
-	Host             HostInfo          `json:"host"`
-	Proxy            ProxyInfo         `json:"proxy"`
-	Runtime          RuntimeInfo       `json:"runtime"`
-	ExposedPorts     []PortInfo        `json:"exposed_ports"`
-	TLSCertificates  []TLSCertificate  `json:"tls_certificates"`
-	SSHUsers         []string          `json:"ssh_users"`
-	SudoUsers        []string          `json:"sudo_users"`
-	PasswordlessSudo bool              `json:"passwordless_sudo"`
-	UFW              ServiceState      `json:"ufw"`
-	Fail2ban         ServiceState      `json:"fail2ban"`
-	LogLocations     []string          `json:"log_locations"`
-	Containers       []ContainerInfo   `json:"containers"`
-	Repo             RepoInfo          `json:"repo"`
-	Observability    ObservabilityInfo `json:"observability"`
-}
-
-type HostInfo struct {
-	Hostname string `json:"hostname"`
-	OS       string `json:"os"`
-	Kernel   string `json:"kernel"`
-}
-
-type ProxyInfo struct {
-	Kind   string   `json:"kind"`
-	Active bool     `json:"active"`
-	Notes  []string `json:"notes"`
-}
-
-type RuntimeInfo struct {
-	Kind         string   `json:"kind"`
-	ComposeFiles []string `json:"compose_files"`
-	SystemdUnits []string `json:"systemd_units"`
-}
-
-type PortInfo struct {
-	Proto   string `json:"proto"`
-	Port    int    `json:"port"`
-	Address string `json:"address"`
-	Public  bool   `json:"public"`
-}
-
-type TLSCertificate struct {
-	Path      string   `json:"path"`
-	Names     []string `json:"names"`
-	ExpiresAt string   `json:"expires_at"`
-	Valid     bool     `json:"valid"`
-}
-
-type TLSCertificateStatus string
-
-const (
-	TLSCertificateStatusMissing TLSCertificateStatus = "missing"
-	TLSCertificateStatusInvalid TLSCertificateStatus = "invalid"
-	TLSCertificateStatusValid   TLSCertificateStatus = "valid"
-)
-
-type ServiceState struct {
-	Enabled bool   `json:"enabled"`
-	Status  string `json:"status"`
-}
-
-type ContainerInfo struct {
-	Name     string `json:"name"`
-	Image    string `json:"image"`
-	Status   string `json:"status"`
-	Restarts int    `json:"restarts"`
-}
-
-type RepoInfo struct {
-	GitHubWorkflows []string       `json:"github_workflows"`
-	ComposeFiles    []string       `json:"compose_files"`
-	NginxPaths      []string       `json:"nginx_paths"`
-	SystemdUnits    []string       `json:"systemd_units"`
-	Technologies    []string       `json:"technologies"`
-	TechProfile     ci.TechProfile `json:"tech_profile"`
-}
-
-type ObservabilityInfo struct {
-	Enabled bool   `json:"enabled"`
-	Status  string `json:"status"`
-}
-
-func Collect(cfg config.Config, root string) (Snapshot, error) {
-	target := remote.Target{
-		Host:            cfg.Server.Host,
-		User:            cfg.Server.SSHUser,
-		Port:            cfg.Server.SSHPort,
-		KeyPath:         cfg.Server.PrivateKeyPath,
-		HostKeyChecking: cfg.Server.HostKeyChecking,
-		KnownHostsPath:  cfg.Server.KnownHostsPath,
-	}
-
-	raw, err := remote.CaptureScript(target, buildRemoteInventoryScript(cfg))
-	if err != nil {
-		return Snapshot{}, err
-	}
-
-	var snapshot Snapshot
-	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
-		return Snapshot{}, fmt.Errorf("decode inventory: %w", err)
-	}
-	repo, err := collectRepoInfo(root, cfg)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	snapshot.Repo = repo
-	return snapshot, nil
-}
-
-func collectRepoInfo(root string, cfg config.Config) (RepoInfo, error) {
-	profile, err := ci.DetectTech(root)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	workflows, err := DetectGitHubWorkflows(root)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	composeFiles, err := DetectComposeFiles(root, cfg.AppInventory.ComposePaths)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	nginxPaths, err := DetectNginxPaths(root, cfg.AppInventory.NginxPaths)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-	systemdUnits, err := DetectSystemdUnits(root, cfg.AppInventory.SystemdUnits)
-	if err != nil {
-		return RepoInfo{}, err
-	}
-
-	technologies := []string{}
-	if len(profile.NodeProjects) > 0 {
-		technologies = append(technologies, "node")
-		for _, project := range profile.NodeProjects {
-			if project.Framework == "nextjs" {
-				technologies = append(technologies, "nextjs")
-				break
-			}
-		}
-	}
-	if len(profile.DotnetProjects) > 0 {
-		technologies = append(technologies, ".net")
-	}
-	if len(profile.Dockerfiles) > 0 || len(profile.ComposeFiles) > 0 || len(composeFiles) > 0 {
-		technologies = append(technologies, "docker")
-	}
-	technologies = dedupeStrings(technologies)
-
-	return RepoInfo{
-		GitHubWorkflows: workflows,
-		ComposeFiles:    composeFiles,
-		NginxPaths:      nginxPaths,
-		SystemdUnits:    systemdUnits,
-		Technologies:    technologies,
-		TechProfile:     profile,
-	}, nil
-}
 
 func buildRemoteInventoryScript(cfg config.Config) string {
 	domains := strings.Join(cfg.AppInventory.Domains, ",")
@@ -343,7 +177,7 @@ if len(ssh_connection) == 4:
         pass
 print(json.dumps(snapshot))
 PY
-`, shellQuote(domains))
+`, scriptutil.ShellQuote(domains))
 }
 
 func dedupeStrings(values []string) []string {
@@ -361,13 +195,6 @@ func dedupeStrings(values []string) []string {
 		result = append(result, value)
 	}
 	return result
-}
-
-func shellQuote(v string) string {
-	if v == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(v, "'", `'"'"'`) + "'"
 }
 
 func RepoRelative(root string, path string) string {

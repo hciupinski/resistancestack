@@ -1,0 +1,108 @@
+package config
+
+func Default(projectName string) Config {
+	return Config{
+		ProjectName: projectName,
+		Mode: ModeConfig{
+			Strategy: ModeAuditThenApply,
+		},
+		Server: ServerConfig{
+			Host:            "1.2.3.4",
+			SSHUser:         "deployer",
+			SSHPort:         22,
+			PrivateKeyPath:  "~/.ssh/id_ed25519",
+			HostKeyChecking: "strict",
+			KnownHostsPath:  "~/.ssh/known_hosts",
+		},
+		HostHardening: HostHardeningConfig{
+			Enabled: true,
+			SSHHardening: SSHHardeningConfig{
+				DisableRootLogin:        true,
+				DisablePasswordAuth:     true,
+				MaxAuthTries:            4,
+				LoginGraceTimeSeconds:   30,
+				GuardCurrentOperator:    true,
+				RequirePasswordlessSudo: true,
+			},
+			UFWPolicy: UFWPolicyConfig{
+				Enabled:                true,
+				DefaultIncoming:        "deny",
+				DefaultOutgoing:        "allow",
+				AllowedTCPPorts:        []int{22, 80, 443},
+				AdminAllowlist:         []string{},
+				OperatorAccessMode:     OperatorAccessModePublicHardened,
+				PreserveCurrentSession: true,
+			},
+			Fail2ban: Fail2banConfig{
+				Enabled:         true,
+				BanTime:         "1h",
+				FindTime:        "10m",
+				MaxRetry:        5,
+				RecidiveEnabled: true,
+				RecidiveBanTime: "24h",
+			},
+			SSLCertificates: SSLCertificatesConfig{
+				Enabled:   true,
+				AutoIssue: false,
+				Email:     "security@example.com",
+				Staging:   false,
+			},
+			AutomaticSecurityUpdates: true,
+			CheckDeployUser:          true,
+			CheckDockerDaemon:        true,
+			BackupDir:                "/var/lib/resistack/backups/host",
+		},
+		AppInventory: AppInventoryConfig{
+			ComposePaths:    []string{"docker-compose.yml", "docker-compose.prod.yml", "compose.yml"},
+			NginxPaths:      []string{"/etc/nginx/sites-enabled", "/etc/nginx/conf.d"},
+			SystemdUnits:    []string{"nginx", "docker", "fail2ban"},
+			Domains:         []string{"app.example.com"},
+			HealthcheckURLs: []string{"http://127.0.0.1:8080/health"},
+		},
+		Observability: ObservabilityConfig{
+			Enable:       true,
+			LogSources:   []string{"journald", "nginx", "docker", "fail2ban"},
+			HostMetrics:  true,
+			PanelBind:    "127.0.0.1:9400",
+			LocalDataDir: "/var/lib/resistack/observability",
+		},
+		CI: CIConfig{
+			Provider:          CIProviderGitHub,
+			GenerateWorkflows: true,
+			Mode:              CIModeWarnOnly,
+			Schedule:          "24 3 * * *",
+			GitHub: CIGitHubConfig{
+				RepositoryVisibility: RepoVisibilityUnknown,
+				CodeScanningEnabled:  false,
+				SARIFUploadMode:      CISARIFUploadModeAuto,
+			},
+			Scans: CIScansConfig{
+				Dependency: true,
+				Image:      true,
+				SBOM:       true,
+				Secrets:    true,
+				License:    true,
+				OSV:        true,
+			},
+		},
+		Reporting: ReportingConfig{
+			OutputPath:      "./.resistack/reports",
+			Format:          FormatText,
+			MinimumSeverity: SeverityLow,
+		},
+		Alerts: AlertsConfig{
+			WebhookURL: "https://hooks.example.com/security",
+			Email:      "security@example.com",
+			SlackURL:   "https://hooks.slack.com/services/T000/B000/XXX",
+			Enabled:    true,
+			Thresholds: AlertThresholds{
+				SSHFailures15m:    25,
+				Bans15m:           10,
+				NginxErrors15m:    30,
+				ContainerRestarts: 3,
+				DiskPercentUsed:   85,
+				CertExpiryDays:    21,
+			},
+		},
+	}
+}
