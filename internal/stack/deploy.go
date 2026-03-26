@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/audit"
 	"github.com/hciupinski/resistancestack/internal/ci"
@@ -26,7 +25,7 @@ func Inventory(cfg config.Config, root string, out io.Writer) (inventory.Snapsho
 	if err != nil {
 		return inventory.Snapshot{}, err
 	}
-	printInventory(out, snapshot)
+	renderInventory(out, snapshot)
 	return snapshot, nil
 }
 
@@ -130,27 +129,4 @@ func GenerateCI(cfg config.Config, root string, out io.Writer) error {
 		fmt.Fprintf(out, "generated %s\n", path)
 	}
 	return nil
-}
-
-func printInventory(out io.Writer, snapshot inventory.Snapshot) {
-	fmt.Fprintf(out, "Host: %s\n", snapshot.Host.Hostname)
-	fmt.Fprintf(out, "OS: %s\n", snapshot.Host.OS)
-	fmt.Fprintf(out, "Proxy: %s\n", snapshot.Proxy.Kind)
-	fmt.Fprintf(out, "Runtime: %s\n", snapshot.Runtime.Kind)
-	fmt.Fprintf(out, "UFW: %s\n", snapshot.UFW.Status)
-	fmt.Fprintf(out, "Fail2ban: %s\n", snapshot.Fail2ban.Status)
-	fmt.Fprintf(out, "Passwordless sudo: %t\n", snapshot.PasswordlessSudo)
-	if len(snapshot.Repo.Technologies) > 0 {
-		fmt.Fprintf(out, "Repo technologies: %s\n", stringsJoin(snapshot.Repo.Technologies))
-	}
-	if len(snapshot.Repo.GitHubWorkflows) > 0 {
-		fmt.Fprintf(out, "GitHub workflows: %s\n", stringsJoin(snapshot.Repo.GitHubWorkflows))
-	}
-}
-
-func stringsJoin(values []string) string {
-	if len(values) == 0 {
-		return "none"
-	}
-	return strings.Join(values, ", ")
 }

@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+func TestTargetAddress(t *testing.T) {
+	target := Target{Host: "example.com", User: "deployer"}
+	if got := target.address(); got != "deployer@example.com" {
+		t.Fatalf("address = %q", got)
+	}
+}
+
 func TestTargetSSHArgs_StrictCheckingUsesKnownHosts(t *testing.T) {
 	target := Target{
 		Host:            "example.com",
@@ -62,5 +69,27 @@ func TestTargetSSHArgs_AcceptNew(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected accept-new host key checking")
+	}
+}
+
+func TestTargetSSHArgs_UnknownModeFallsBackToStrict(t *testing.T) {
+	target := Target{
+		Host:            "example.com",
+		User:            "deployer",
+		Port:            22,
+		KeyPath:         "~/.ssh/id_ed25519",
+		HostKeyChecking: "invalid",
+	}
+
+	args := target.sshArgs()
+	found := false
+	for _, arg := range args {
+		if arg == "StrictHostKeyChecking=yes" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected strict fallback")
 	}
 }

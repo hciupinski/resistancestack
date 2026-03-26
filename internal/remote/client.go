@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/fsutil"
+	"github.com/hciupinski/resistancestack/internal/scriptutil"
 )
 
 type Target struct {
@@ -101,7 +102,7 @@ func Capture(target Target, command string) (string, error) {
 }
 
 func Upload(target Target, remotePath string, content []byte) error {
-	command := fmt.Sprintf("cat > %s", shellQuote(remotePath))
+	command := fmt.Sprintf("cat > %s", scriptutil.ShellQuote(remotePath))
 	args := append(target.sshArgs(), target.address(), command)
 	cmd := exec.Command("ssh", args...)
 	cmd.Stdin = bytes.NewReader(content)
@@ -111,11 +112,4 @@ func Upload(target Target, remotePath string, content []byte) error {
 		return fmt.Errorf("ssh upload failed: %w (%s)", err, stderr.String())
 	}
 	return nil
-}
-
-func shellQuote(v string) string {
-	if v == "" {
-		return "''"
-	}
-	return "'" + strings.ReplaceAll(v, "'", `'"'"'`) + "'"
 }

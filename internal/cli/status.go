@@ -2,24 +2,18 @@ package cli
 
 import (
 	"io"
-	"os"
 
 	"github.com/hciupinski/resistancestack/internal/stack"
 )
 
 func runStatus(args []string, out io.Writer, errOut io.Writer) error {
-	fs := newFlagSet("status")
-	configPath := fs.String("config", defaultConfigPath, "Path to configuration file")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	cfg, err := loadConfigWithValidation(*configPath, errOut)
+	_, configPath, err := parseConfigFlag("status", args)
 	if err != nil {
 		return err
 	}
-	wd, err := os.Getwd()
+	ctx, err := loadContext(*configPath, out, errOut)
 	if err != nil {
 		return err
 	}
-	return stack.Status(cfg, wd, out)
+	return stack.Status(ctx.Config, ctx.Root, ctx.Out)
 }

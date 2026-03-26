@@ -1,10 +1,7 @@
 package audit
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/netip"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -12,44 +9,8 @@ import (
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/inventory"
+	"github.com/hciupinski/resistancestack/internal/netutil"
 )
-
-type Finding struct {
-	ID             string `json:"id"`
-	Module         string `json:"module"`
-	Severity       string `json:"severity"`
-	Description    string `json:"description"`
-	DetectedValue  string `json:"detected_value"`
-	Risk           string `json:"risk"`
-	Recommendation string `json:"recommendation"`
-	AutoRemediable bool   `json:"auto_remediable"`
-}
-
-type Remediation struct {
-	Module string   `json:"module"`
-	Reason string   `json:"reason"`
-	Steps  []string `json:"steps"`
-}
-
-type Summary struct {
-	BySeverity  map[string]int `json:"by_severity"`
-	TopSeverity string         `json:"top_severity"`
-}
-
-type Report struct {
-	GeneratedAt time.Time          `json:"generated_at"`
-	Snapshot    inventory.Snapshot `json:"snapshot"`
-	Summary     Summary            `json:"summary"`
-	Findings    []Finding          `json:"findings"`
-	Remediation []Remediation      `json:"remediation"`
-}
-
-var severityOrder = map[string]int{
-	config.SeverityLow:      1,
-	config.SeverityMedium:   2,
-	config.SeverityHigh:     3,
-	config.SeverityCritical: 4,
-}
 
 func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 	findings := []Finding{}
@@ -146,7 +107,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if operatorAccessMode == config.OperatorAccessModeAllowlistOnly && snapshot.CurrentSessionIP != "" && !ipInAllowlist(snapshot.CurrentSessionIP, cfg.HostHardening.UFWPolicy.AdminAllowlist) {
+	if operatorAccessMode == config.OperatorAccessModeAllowlistOnly && snapshot.CurrentSessionIP != "" && !netutil.IPInAllowlist(snapshot.CurrentSessionIP, cfg.HostHardening.UFWPolicy.AdminAllowlist) {
 		add(Finding{
 			ID:             "host.ssh.current-session-not-allowlisted",
 			Module:         "host-hardening",
@@ -266,63 +227,6 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 	}
 }
 
-func Save(root string, cfg config.Config, report Report) (string, error) {
-	dir := cfg.Reporting.OutputPath
-	if !filepath.IsAbs(dir) {
-		dir = filepath.Join(root, dir)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create report directory: %w", err)
-	}
-	format := strings.ToLower(strings.TrimSpace(cfg.Reporting.Format))
-	name := "audit-report.txt"
-	content := []byte(FormatText(report))
-	if format == config.FormatJSON {
-		name = "audit-report.json"
-		raw, err := json.MarshalIndent(report, "", "  ")
-		if err != nil {
-			return "", fmt.Errorf("marshal audit report: %w", err)
-		}
-		content = raw
-	}
-	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return "", fmt.Errorf("write audit report: %w", err)
-	}
-	return path, nil
-}
-
-func FormatText(report Report) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Audit generated at: %s\n", report.GeneratedAt.Format(time.RFC3339))
-	fmt.Fprintf(&b, "Top severity: %s\n", report.Summary.TopSeverity)
-	for _, severity := range []string{config.SeverityCritical, config.SeverityHigh, config.SeverityMedium, config.SeverityLow} {
-		fmt.Fprintf(&b, "%s: %d\n", severity, report.Summary.BySeverity[severity])
-	}
-	if len(report.Findings) == 0 {
-		b.WriteString("No findings.\n")
-		return b.String()
-	}
-	b.WriteString("\nFindings:\n")
-	for _, finding := range report.Findings {
-		fmt.Fprintf(&b, "- [%s] %s (%s)\n", strings.ToUpper(finding.Severity), finding.Description, finding.Module)
-		fmt.Fprintf(&b, "  detected: %s\n", finding.DetectedValue)
-		fmt.Fprintf(&b, "  risk: %s\n", finding.Risk)
-		fmt.Fprintf(&b, "  recommendation: %s\n", finding.Recommendation)
-		fmt.Fprintf(&b, "  auto-remediable: %t\n", finding.AutoRemediable)
-	}
-	if len(report.Remediation) > 0 {
-		b.WriteString("\nRemediation plan:\n")
-		for _, item := range report.Remediation {
-			fmt.Fprintf(&b, "- %s: %s\n", item.Module, item.Reason)
-			for _, step := range item.Steps {
-				fmt.Fprintf(&b, "  - %s\n", step)
-			}
-		}
-	}
-	return b.String()
-}
-
 func buildRemediation(findings []Finding) []Remediation {
 	moduleReasons := map[string][]Finding{}
 	for _, finding := range findings {
@@ -371,23 +275,6 @@ func containsSecurityWorkflow(workflows []string) bool {
 	for _, workflow := range workflows {
 		base := filepath.Base(workflow)
 		if strings.HasPrefix(base, "security-") {
-			return true
-		}
-	}
-	return false
-}
-
-func ipInAllowlist(rawIP string, allowlist []string) bool {
-	ip, err := netip.ParseAddr(strings.TrimSpace(rawIP))
-	if err != nil {
-		return false
-	}
-	for _, entry := range allowlist {
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(entry))
-		if err != nil {
-			continue
-		}
-		if prefix.Contains(ip) {
 			return true
 		}
 	}

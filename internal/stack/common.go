@@ -3,9 +3,6 @@ package stack
 import (
 	"fmt"
 	"io"
-
-	"github.com/hciupinski/resistancestack/internal/config"
-	"github.com/hciupinski/resistancestack/internal/remote"
 )
 
 type Module string
@@ -16,17 +13,6 @@ const (
 	ModuleCISecurity            Module = "ci-security"
 	ModuleInventoryAudit        Module = "inventory-audit"
 )
-
-func newTarget(cfg config.Config) remote.Target {
-	return remote.Target{
-		Host:            cfg.Server.Host,
-		User:            cfg.Server.SSHUser,
-		Port:            cfg.Server.SSHPort,
-		KeyPath:         cfg.Server.PrivateKeyPath,
-		HostKeyChecking: cfg.Server.HostKeyChecking,
-		KnownHostsPath:  cfg.Server.KnownHostsPath,
-	}
-}
 
 func printWarnings(out io.Writer, warnings []string) {
 	for _, warning := range warnings {
