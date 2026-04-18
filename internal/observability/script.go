@@ -203,8 +203,8 @@ PY
   sudo chmod 0640 "${GRAFANA_CREDENTIALS}"
 fi
 
-admin_user="$(cut -d: -f1 "${GRAFANA_CREDENTIALS}")"
-admin_password="$(cut -d: -f2- "${GRAFANA_CREDENTIALS}")"
+admin_user="$(sudo cut -d: -f1 "${GRAFANA_CREDENTIALS}")"
+admin_password="$(sudo cut -d: -f2- "${GRAFANA_CREDENTIALS}")"
 
 install_grafana
 install_loki
