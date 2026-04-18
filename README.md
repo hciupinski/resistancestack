@@ -137,7 +137,7 @@ resistack apply host-hardening --dry-run
 ```
 
 If `host-hardening` detects that the configured SSH user does not have passwordless sudo, it stops immediately and prints the exact commands needed to grant it.
-If `host_hardening.ssl_certificates.auto_issue=true`, `host-hardening` will use `certbot certonly --standalone` to issue a missing or expired Let's Encrypt certificate for the primary domain and fail the run if issuance does not succeed.
+If `host_hardening.ssl_certificates.auto_issue=true`, `host-hardening` first validates Certbot's local lineage inventory with `certbot certificates` and refuses to auto-issue when the managed lineage naming or `/etc/letsencrypt` layout is inconsistent. It only runs `certbot certonly --standalone` when no broken local Certbot state is detected, and fails the run if issuance or post-issue validation does not succeed.
 
 ### 6. Generate Security Workflows
 
