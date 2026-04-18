@@ -46,7 +46,7 @@ DOWNLOAD_STAGE="${STAGING_DIR}/downloads"
 GRAFANA_STAGE="${STAGING_DIR}/grafana-home"
 
 log() {
-  printf '[resistack] %s\n' "$1"
+  printf '[resistack] %s\n' "$1" >&2
 }
 
 log_step() {
