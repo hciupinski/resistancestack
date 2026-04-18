@@ -18,10 +18,10 @@ func newFlagSet(name string) *flag.FlagSet {
 	return fs
 }
 
-func loadConfigWithValidation(configPath string, errOut io.Writer) (config.Config, error) {
-	cfg, err := config.Load(configPath)
+func loadConfigWithValidation(configPath string, env string, errOut io.Writer) (config.Config, string, error) {
+	cfg, overlayPath, err := config.LoadWithEnv(configPath, env)
 	if err != nil {
-		return config.Config{}, err
+		return config.Config{}, "", err
 	}
 	warnings, errs := validation.Check(cfg)
 	for _, warning := range warnings {
@@ -29,9 +29,9 @@ func loadConfigWithValidation(configPath string, errOut io.Writer) (config.Confi
 	}
 	writeValidationErrors(errOut, errs)
 	if len(errs) > 0 {
-		return config.Config{}, invalidConfigError(errs)
+		return config.Config{}, "", invalidConfigError(errs)
 	}
-	return cfg, nil
+	return cfg, overlayPath, nil
 }
 
 func writeValidationErrors(errOut io.Writer, errs []error) {

@@ -7,12 +7,13 @@ import (
 )
 
 func runAudit(args []string, out io.Writer, errOut io.Writer) error {
-	fs, configPath, err := parseConfigFlag("audit", args)
+	fs, configPath, envName := newConfigFlagSet("audit")
 	dryRun := fs.Bool("dry-run", false, "Explain what audit will do while keeping the read-only execution path")
+	selection, err := parseConfigSelection(fs, args, configPath, envName)
 	if err != nil {
 		return err
 	}
-	ctx, err := loadContext(*configPath, out, errOut)
+	ctx, err := loadContext(selection, out, errOut)
 	if err != nil {
 		return err
 	}

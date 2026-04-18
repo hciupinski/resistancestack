@@ -7,12 +7,13 @@ import (
 )
 
 func runApply(args []string, out io.Writer, errOut io.Writer) error {
-	fs, configPath, err := parseConfigFlag("apply", args)
+	fs, configPath, envName := newConfigFlagSet("apply")
 	dryRun := fs.Bool("dry-run", false, "Print intended changes without executing them")
+	selection, err := parseConfigSelection(fs, args, configPath, envName)
 	if err != nil {
 		return err
 	}
-	ctx, err := loadContext(*configPath, out, errOut)
+	ctx, err := loadContext(selection, out, errOut)
 	if err != nil {
 		return err
 	}

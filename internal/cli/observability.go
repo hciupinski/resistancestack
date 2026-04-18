@@ -11,12 +11,13 @@ func runObservability(args []string, out io.Writer, errOut io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("observability requires a subcommand: enable or disable")
 	}
-	fs, configPath, err := parseConfigFlag("observability "+args[0], args[1:])
+	fs, configPath, envName := newConfigFlagSet("observability " + args[0])
 	dryRun := fs.Bool("dry-run", false, "Print the observability changes without executing them")
+	selection, err := parseConfigSelection(fs, args[1:], configPath, envName)
 	if err != nil {
 		return err
 	}
-	ctx, err := loadContext(*configPath, out, errOut)
+	ctx, err := loadContext(selection, out, errOut)
 	if err != nil {
 		return err
 	}

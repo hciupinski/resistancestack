@@ -11,11 +11,12 @@ func runCI(args []string, out io.Writer, errOut io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("ci requires a subcommand: generate or validate")
 	}
-	_, configPath, err := parseConfigFlag("ci "+args[0], args[1:])
+	fs, configPath, envName := newConfigFlagSet("ci " + args[0])
+	selection, err := parseConfigSelection(fs, args[1:], configPath, envName)
 	if err != nil {
 		return err
 	}
-	ctx, err := loadContext(*configPath, out, errOut)
+	ctx, err := loadContext(selection, out, errOut)
 	if err != nil {
 		return err
 	}

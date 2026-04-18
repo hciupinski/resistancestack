@@ -1,3 +1,5 @@
+# Shared base config. Add environment-specific overrides in sibling files such as
+# resistack.dev.yaml and resistack.prod.yaml, and keep only differing values there.
 project_name: "myapp"
 mode:
   strategy: "audit_then_apply"

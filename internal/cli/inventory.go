@@ -7,11 +7,12 @@ import (
 )
 
 func runInventory(args []string, out io.Writer, errOut io.Writer) error {
-	_, configPath, err := parseConfigFlag("inventory", args)
+	fs, configPath, envName := newConfigFlagSet("inventory")
+	selection, err := parseConfigSelection(fs, args, configPath, envName)
 	if err != nil {
 		return err
 	}
-	ctx, err := loadContext(*configPath, out, errOut)
+	ctx, err := loadContext(selection, out, errOut)
 	if err != nil {
 		return err
 	}
