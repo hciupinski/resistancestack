@@ -60,11 +60,13 @@ func Default(projectName string) Config {
 			HealthcheckURLs: []string{"http://127.0.0.1:8080/health"},
 		},
 		Observability: ObservabilityConfig{
-			Enable:       true,
-			LogSources:   []string{"journald", "nginx", "docker", "fail2ban"},
-			HostMetrics:  true,
-			PanelBind:    "127.0.0.1:9400",
-			LocalDataDir: "/var/lib/resistack/observability",
+			Enable:           true,
+			LogSources:       []string{"journald", "nginx", "docker", "fail2ban"},
+			HostMetrics:      true,
+			PanelBind:        "127.0.0.1:9400",
+			LocalDataDir:     "/var/lib/resistack/observability",
+			SnapshotInterval: "1m",
+			RetentionDays:    7,
 		},
 		CI: CIConfig{
 			Provider:          CIProviderGitHub,

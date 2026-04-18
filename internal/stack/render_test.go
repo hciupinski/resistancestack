@@ -50,7 +50,18 @@ func TestFormatStatus(t *testing.T) {
 		Runtime:       inventory.RuntimeInfo{Kind: "docker-compose"},
 		UFW:           inventory.ServiceState{Status: "active"},
 		Fail2ban:      inventory.ServiceState{Status: "active"},
-		Observability: inventory.ObservabilityInfo{Status: "enabled"},
+		Observability: inventory.ObservabilityInfo{
+			Enabled:         true,
+			Status:          "enabled",
+			DashboardURL:    "http://127.0.0.1:9400/",
+			CredentialsPath: "/var/lib/resistack/observability/grafana-admin.txt",
+			LastSnapshotAt:  "2026-04-18T12:00:00Z",
+			SnapshotService: inventory.ServiceState{Status: "active"},
+			SnapshotTimer:   inventory.ServiceState{Status: "active"},
+			GrafanaService:  inventory.ServiceState{Status: "active"},
+			LokiService:     inventory.ServiceState{Status: "active"},
+			AlloyService:    inventory.ServiceState{Status: "active"},
+		},
 		Containers:    []inventory.ContainerInfo{{Name: "api", Status: "running", Restarts: 1}},
 	}
 	report := audit.Report{
@@ -77,6 +88,10 @@ func TestFormatStatus(t *testing.T) {
 		"UFW: active\n" +
 		"Fail2ban: active\n" +
 		"Observability: enabled\n" +
+		"Dashboard: http://127.0.0.1:9400/\n" +
+		"Dashboard credentials: /var/lib/resistack/observability/grafana-admin.txt\n" +
+		"Last snapshot: 2026-04-18T12:00:00Z\n" +
+		"Observability services: snapshot=active timer=active grafana=active loki=active alloy=active\n" +
 		"Security posture: critical\n" +
 		"Findings: critical=1 high=2 medium=3 low=4\n" +
 		"Containers:\n" +

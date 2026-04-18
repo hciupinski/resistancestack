@@ -110,11 +110,13 @@ type AppInventoryConfig struct {
 }
 
 type ObservabilityConfig struct {
-	Enable       bool     `yaml:"enable"`
-	LogSources   []string `yaml:"log_sources,omitempty"`
-	HostMetrics  bool     `yaml:"host_metrics"`
-	PanelBind    string   `yaml:"panel_bind"`
-	LocalDataDir string   `yaml:"local_data_dir"`
+	Enable           bool     `yaml:"enable"`
+	LogSources       []string `yaml:"log_sources,omitempty"`
+	HostMetrics      bool     `yaml:"host_metrics"`
+	PanelBind        string   `yaml:"panel_bind"`
+	LocalDataDir     string   `yaml:"local_data_dir"`
+	SnapshotInterval string   `yaml:"snapshot_interval"`
+	RetentionDays    int      `yaml:"retention_days"`
 }
 
 type CIConfig struct {

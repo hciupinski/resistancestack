@@ -1,28 +1,51 @@
 package observability
 
 import (
-	"crypto/sha256"
-	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 )
 
-func TestBuildEnableScript_DefaultHash(t *testing.T) {
+func TestBuildEnableScript_DefaultContent(t *testing.T) {
 	cfg := config.Default("demo")
-	got := fmt.Sprintf("%x", sha256.Sum256([]byte(BuildEnableScript(cfg))))
-	want := "e74847485bf47a672552cfd8c7d4bc4f2b80bbf5bfec679704b4854203ad9fb4"
-	if got != want {
-		t.Fatalf("unexpected enable script hash %s", got)
+	got := BuildEnableScript(cfg)
+
+	required := []string{
+		"resistack-grafana.service",
+		"resistack-loki.service",
+		"resistack-alloy.service",
+		"resistack-observability-snapshot.timer",
+		"Grafana",
+		"Loki",
+		`OnUnitActiveSec=60s`,
+		`http://${PANEL_HOST}:${PANEL_PORT}/`,
+		"resistack-live-logs",
+		`loki.source.journal "systemd"`,
+	}
+	for _, fragment := range required {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("expected enable script to contain %q", fragment)
+		}
 	}
 }
 
-func TestBuildDisableScript_DefaultHash(t *testing.T) {
+func TestBuildDisableScript_DefaultContent(t *testing.T) {
 	cfg := config.Default("demo")
-	got := fmt.Sprintf("%x", sha256.Sum256([]byte(BuildDisableScript(cfg))))
-	want := "0604ee12cbd4dc42a5bf808112877e962a9c309ae36e20945ae78898597b420c"
-	if got != want {
-		t.Fatalf("unexpected disable script hash %s", got)
+	got := BuildDisableScript(cfg)
+
+	required := []string{
+		"resistack-grafana.service",
+		"resistack-loki.service",
+		"resistack-alloy.service",
+		"resistack-observability-snapshot.timer",
+		"resistack-observability-ui.service",
+		cfg.Observability.LocalDataDir,
+	}
+	for _, fragment := range required {
+		if !strings.Contains(got, fragment) {
+			t.Fatalf("expected disable script to contain %q", fragment)
+		}
 	}
 }
 

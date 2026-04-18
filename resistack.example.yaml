@@ -75,6 +75,8 @@ observability:
   host_metrics: true
   panel_bind: "127.0.0.1:9400"
   local_data_dir: "/var/lib/resistack/observability"
+  snapshot_interval: "1m"
+  retention_days: 7
 
 ci:
   provider: "github_actions"

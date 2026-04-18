@@ -37,6 +37,21 @@ def service_state(name):
     enabled = run(["systemctl", "is-enabled", name]).returncode == 0
     return {"enabled": enabled, "status": status}
 
+def parse_env_file(path):
+    values = {}
+    if not os.path.exists(path):
+        return values
+    for raw_line in open(path, encoding="utf-8"):
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and ((value[0] == "'" and value[-1] == "'") or (value[0] == '"' and value[-1] == '"')):
+            value = value[1:-1]
+        values[key.strip()] = value
+    return values
+
 proxy_kind = "none"
 proxy_notes = []
 if service_state("nginx")["status"] == "active":
@@ -142,10 +157,29 @@ for container_id in docker_ids:
         "restarts": data.get("RestartCount", 0),
     })
 
-obs_enabled = os.path.exists("/etc/systemd/system/resistack-observability.timer")
+obs_env = parse_env_file("/etc/default/resistack-observability")
+snapshot_service = service_state("resistack-observability-snapshot.service")
+snapshot_timer = service_state("resistack-observability-snapshot.timer")
+grafana_service = service_state("resistack-grafana.service")
+loki_service = service_state("resistack-loki.service")
+alloy_service = service_state("resistack-alloy.service")
+obs_enabled = snapshot_timer["enabled"] or grafana_service["enabled"] or loki_service["enabled"] or alloy_service["enabled"]
 obs_state = "disabled"
 if obs_enabled:
-    obs_state = text(["systemctl", "is-active", "resistack-observability.timer"]) or "inactive"
+    active_states = [snapshot_timer["status"], grafana_service["status"], loki_service["status"], alloy_service["status"]]
+    obs_state = "active" if "active" in active_states else "inactive"
+
+dashboard_url = ""
+panel_host = obs_env.get("PANEL_HOST", "127.0.0.1")
+panel_port = obs_env.get("PANEL_PORT", "9400")
+if obs_env and (panel_host or panel_port):
+    dashboard_url = f"http://{panel_host}:{panel_port}/"
+
+credentials_path = obs_env.get("GRAFANA_CREDENTIALS_FILE", "")
+latest_path = obs_env.get("LATEST_PATH", "")
+last_snapshot_at = ""
+if latest_path and os.path.exists(latest_path):
+    last_snapshot_at = datetime.fromtimestamp(os.path.getmtime(latest_path), tz=timezone.utc).isoformat()
 
 snapshot = {
     "collected_at": datetime.now(timezone.utc).isoformat(),
@@ -166,7 +200,18 @@ snapshot = {
     "fail2ban": service_state("fail2ban"),
     "log_locations": log_locations,
     "containers": containers,
-    "observability": {"enabled": obs_enabled, "status": obs_state},
+    "observability": {
+        "enabled": obs_enabled,
+        "status": obs_state,
+        "dashboard_url": dashboard_url,
+        "credentials_path": credentials_path,
+        "last_snapshot_at": last_snapshot_at,
+        "snapshot_service": snapshot_service,
+        "snapshot_timer": snapshot_timer,
+        "grafana_service": grafana_service,
+        "loki_service": loki_service,
+        "alloy_service": alloy_service,
+    },
 }
 ssh_connection = os.environ.get("SSH_CONNECTION", "").split()
 if len(ssh_connection) == 4:

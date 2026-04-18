@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 )
@@ -181,6 +182,12 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 		}
 		if strings.TrimSpace(cfg.Observability.LocalDataDir) == "" {
 			errs = append(errs, fmt.Errorf("observability.local_data_dir is required when observability.enable=true"))
+		}
+		if _, err := time.ParseDuration(strings.TrimSpace(cfg.Observability.SnapshotInterval)); err != nil {
+			errs = append(errs, fmt.Errorf("observability.snapshot_interval must be a valid Go duration"))
+		}
+		if cfg.Observability.RetentionDays <= 0 {
+			errs = append(errs, fmt.Errorf("observability.retention_days must be > 0"))
 		}
 		if cfg.Observability.HostMetrics && !containsString(cfg.Observability.LogSources, "journald") {
 			warnings = append(warnings, "observability.host_metrics=true but journald is not listed in observability.log_sources")
