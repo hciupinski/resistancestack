@@ -80,6 +80,19 @@ func TestConfigBackedCommandsAcceptEnvFlag(t *testing.T) {
 	}
 }
 
+func TestRunApply_AcceptsFlagsAfterModules(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeValidConfig(t, root)
+
+	err := runApply([]string{"host-hardening", "--env", "prod", "--dry-run", "--config", configPath}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected missing overlay error")
+	}
+	if got := err.Error(); !strings.Contains(got, `environment overlay "prod" not found`) {
+		t.Fatalf("unexpected error %q", got)
+	}
+}
+
 func TestLoadContext_WithEnvPrintsSummaryAndLoadsMergedConfig(t *testing.T) {
 	root := t.TempDir()
 	configPath := writeValidConfig(t, root)
