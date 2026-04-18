@@ -11,7 +11,7 @@ import (
 func TestBuildApplyScript_DefaultHash(t *testing.T) {
 	cfg := config.Default("demo")
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(BuildApplyScript(cfg))))
-	want := "658b3b57ac3f4ad20f8f13e2d699c8bc3d9c98c2b14012d6a795862cee6c8081"
+	want := "f609195777d276f01d7f58675be3485e5b8ec7f7b2f52557e04c5aa5dc0c291f"
 	if got != want {
 		t.Fatalf("unexpected apply script hash %s", got)
 	}

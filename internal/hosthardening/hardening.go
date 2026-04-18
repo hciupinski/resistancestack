@@ -235,8 +235,84 @@ raise SystemExit(1)
 '
 }
 
-find_matching_certificate_path() {
-  python3 - "$1" <<'PY'
+find_certbot_managed_certificate_lineage() {
+  sudo python3 - "$1" <<'PY'
+import subprocess
+import sys
+
+target = sys.argv[1].strip().lower()
+if not target:
+    raise SystemExit(1)
+
+def covers_domain(name, domain):
+    name = name.strip().lower()
+    if not name:
+        return False
+    if name == domain:
+        return True
+    if not name.startswith("*."):
+        return False
+    suffix = name[2:]
+    if not suffix or not domain.endswith("." + suffix):
+        return False
+    return domain.count(".") == suffix.count(".") + 1
+
+result = subprocess.run(["certbot", "certificates"], text=True, capture_output=True)
+if result.returncode != 0:
+    raise SystemExit(2)
+
+entries = []
+current = None
+for raw_line in result.stdout.splitlines():
+    line = raw_line.strip()
+    if line.startswith("Certificate Name:"):
+        if current:
+            entries.append(current)
+        current = {
+            "cert_name": line.split(":", 1)[1].strip(),
+            "domains": [],
+            "certificate_path": "",
+        }
+        continue
+    if not current:
+        continue
+    if line.startswith("Domains:"):
+        current["domains"] = [item.strip() for item in line.split(":", 1)[1].split() if item.strip()]
+        continue
+    if line.startswith("Certificate Path:"):
+        current["certificate_path"] = line.split(":", 1)[1].strip()
+if current:
+    entries.append(current)
+
+for entry in entries:
+    if any(name.strip().lower() == target for name in entry["domains"]):
+        print(f"{entry['cert_name']}\t{entry['certificate_path']}")
+        raise SystemExit(0)
+for entry in entries:
+    if any(covers_domain(name, target) for name in entry["domains"]):
+        print(f"{entry['cert_name']}\t{entry['certificate_path']}")
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+validate_certbot_managed_lineage() {
+  local cert_name="$1"
+  local fullchain="$2"
+  local expected_fullchain="/etc/letsencrypt/live/${cert_name}/fullchain.pem"
+  local lineage_dir="/etc/letsencrypt/live/${cert_name}"
+  local renewal_conf="/etc/letsencrypt/renewal/${cert_name}.conf"
+  [ -n "${cert_name}" ] || return 1
+  [ -n "${fullchain}" ] || return 1
+  [ "${fullchain}" = "${expected_fullchain}" ] || return 1
+  sudo test -d "${lineage_dir}" || return 1
+  sudo test -f "${renewal_conf}" || return 1
+  sudo test -f "${lineage_dir}/fullchain.pem" || return 1
+  sudo test -f "${lineage_dir}/privkey.pem" || return 1
+}
+
+find_filesystem_matching_certificate_path() {
+  sudo python3 - "$1" <<'PY'
 import re
 import subprocess
 import sys
@@ -297,10 +373,25 @@ raise SystemExit(1)
 PY
 }
 
+find_matching_certificate_path() {
+  local target="$1"
+  local certbot_lineage=""
+  certbot_lineage="$(find_certbot_managed_certificate_lineage "${target}")"
+  local status="$?"
+  if [ "${status}" -eq 0 ]; then
+    printf '%%s\n' "${certbot_lineage#*	}"
+    return 0
+  fi
+  if [ "${status}" -eq 2 ]; then
+    return 2
+  fi
+  find_filesystem_matching_certificate_path "${target}"
+}
+
 certificate_is_valid() {
   local fullchain="$1"
   [ -n "${fullchain}" ] || return 1
-  openssl x509 -in "${fullchain}" -noout -checkend 0 >/dev/null 2>&1
+  sudo openssl x509 -in "${fullchain}" -noout -checkend 0 >/dev/null 2>&1
 }
 
 stop_known_proxy_for_certbot() {
@@ -326,14 +417,33 @@ ensure_managed_certificate() {
 
   certificate_path=""
   certificate_exists="false"
-  if certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+  cert_name=""
+  certbot_lineage=""
+  certbot_lookup_status=1
+  if certbot_lineage="$(find_certbot_managed_certificate_lineage "${SSL_PRIMARY_DOMAIN}")"; then
+    certbot_lookup_status=0
+    IFS=$'\t' read -r cert_name certificate_path <<< "${certbot_lineage}"
+    if ! validate_certbot_managed_lineage "${cert_name}" "${certificate_path}"; then
+      echo "[resistack] certbot reports managed lineage ${cert_name} for ${SSL_PRIMARY_DOMAIN}, but its local files or renewal config are inconsistent" >&2
+      echo "[resistack] repair or delete /etc/letsencrypt/live/${cert_name} and /etc/letsencrypt/renewal/${cert_name}.conf before requesting a new certificate" >&2
+      exit 1
+    fi
     certificate_exists="true"
-    echo "[resistack] selected certificate lineage for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
+    echo "[resistack] selected certbot-managed lineage for ${SSL_PRIMARY_DOMAIN}: ${cert_name} (${certificate_path})"
     if certificate_is_valid "${certificate_path}"; then
       echo "[resistack] valid TLS certificate already present for ${SSL_PRIMARY_DOMAIN}: ${certificate_path}"
       return 0
     fi
     echo "[resistack] existing TLS certificate for ${SSL_PRIMARY_DOMAIN} is expired or invalid: ${certificate_path}"
+  else
+    certbot_lookup_status="$?"
+    if [ "${certbot_lookup_status}" -eq 2 ]; then
+      echo "[resistack] warning: unable to inspect certbot-managed lineages locally; falling back to filesystem detection" >&2
+    elif filesystem_certificate_path="$(find_filesystem_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
+      echo "[resistack] found matching certificate files for ${SSL_PRIMARY_DOMAIN}: ${filesystem_certificate_path}" >&2
+      echo "[resistack] certbot does not report a managed lineage for this domain; repair the local certbot lineage before requesting a new certificate" >&2
+      exit 1
+    fi
   fi
 
   if [ "${SSL_CERTIFICATES_AUTO_ISSUE}" != "true" ]; then
@@ -358,8 +468,7 @@ ensure_managed_certificate() {
     --email "${SSL_EMAIL}"
     -d "${SSL_PRIMARY_DOMAIN}"
   )
-  if [ "${certificate_exists}" = "true" ]; then
-    cert_name="$(basename "$(dirname "${certificate_path}")")"
+  if [ "${certificate_exists}" = "true" ] && [ -n "${cert_name}" ]; then
     certbot_args+=(--cert-name "${cert_name}" --force-renewal)
   fi
   if [ "${SSL_STAGING}" = "true" ]; then
@@ -370,8 +479,13 @@ ensure_managed_certificate() {
   sudo certbot "${certbot_args[@]}"
   restore_proxy_services
 
-  if ! certificate_path="$(find_matching_certificate_path "${SSL_PRIMARY_DOMAIN}")"; then
-    echo "[resistack] no certificate lineage matched ${SSL_PRIMARY_DOMAIN} after certbot run" >&2
+  if ! certbot_lineage="$(find_certbot_managed_certificate_lineage "${SSL_PRIMARY_DOMAIN}")"; then
+    echo "[resistack] certbot finished, but no managed certificate lineage matched ${SSL_PRIMARY_DOMAIN} in local certbot inventory" >&2
+    exit 1
+  fi
+  IFS=$'\t' read -r cert_name certificate_path <<< "${certbot_lineage}"
+  if ! validate_certbot_managed_lineage "${cert_name}" "${certificate_path}"; then
+    echo "[resistack] certbot issued a lineage for ${SSL_PRIMARY_DOMAIN}, but the resulting files or renewal config are inconsistent" >&2
     exit 1
   fi
   echo "[resistack] selected certificate lineage for post-issue verification: ${certificate_path}"
