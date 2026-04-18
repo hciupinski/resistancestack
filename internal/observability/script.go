@@ -25,6 +25,7 @@ func BuildEnableScript(cfg config.Config) string {
 	fmt.Fprintf(&b, "GRAFANA_LOGS=%s\n", scriptutil.ShellQuote(paths.grafanaLogs))
 	fmt.Fprintf(&b, "GRAFANA_CONFIG=%s\n", scriptutil.ShellQuote(paths.grafanaConfig))
 	fmt.Fprintf(&b, "GRAFANA_DASHBOARDS=%s\n", scriptutil.ShellQuote(paths.grafanaDashboards))
+	fmt.Fprintf(&b, "GRAFANA_PROVISIONING=%s\n", scriptutil.ShellQuote(paths.grafanaProvision))
 	fmt.Fprintf(&b, "GRAFANA_CREDENTIALS=%s\n", scriptutil.ShellQuote(paths.grafanaCreds))
 	fmt.Fprintf(&b, "LOKI_DATA=%s\n", scriptutil.ShellQuote(paths.lokiData))
 	fmt.Fprintf(&b, "LOKI_CONFIG=%s\n", scriptutil.ShellQuote(paths.lokiConfig))
@@ -35,12 +36,18 @@ func BuildEnableScript(cfg config.Config) string {
 	fmt.Fprintf(&b, "PANEL_HOST=%s\n", scriptutil.ShellQuote(host))
 fmt.Fprintf(&b, "PANEL_PORT=%s\n", scriptutil.ShellQuote(port))
 fmt.Fprintf(&b, "GRAFANA_VERSION=%s\n", scriptutil.ShellQuote(grafanaVersion))
-fmt.Fprintf(&b, "GRAFANA_BUILD=%s\n", scriptutil.ShellQuote(grafanaBuild))
-fmt.Fprintf(&b, "LOKI_VERSION=%s\n", scriptutil.ShellQuote(lokiVersion))
-fmt.Fprintf(&b, "ALLOY_VERSION=%s\n", scriptutil.ShellQuote(alloyVersion))
-	b.WriteString(`
-sudo install -d -m 0755 "${DATA_DIR}" "${BIN_DIR}" "${CONFIG_DIR}" "${DOWNLOAD_DIR}" "${LOG_DIR}"
-sudo install -d -m 0755 "$(dirname "${GRAFANA_CONFIG}")" "$(dirname "${LOKI_CONFIG}")" "$(dirname "${ALLOY_CONFIG}")" "${GRAFANA_DASHBOARDS}"
+	fmt.Fprintf(&b, "GRAFANA_BUILD=%s\n", scriptutil.ShellQuote(grafanaBuild))
+	fmt.Fprintf(&b, "LOKI_VERSION=%s\n", scriptutil.ShellQuote(lokiVersion))
+	fmt.Fprintf(&b, "ALLOY_VERSION=%s\n", scriptutil.ShellQuote(alloyVersion))
+		b.WriteString(`
+STAGING_DIR="$(mktemp -d /tmp/resistack-observability.XXXXXX)"
+DOWNLOAD_STAGE="${STAGING_DIR}/downloads"
+GRAFANA_STAGE="${STAGING_DIR}/grafana-home"
+mkdir -p "${DOWNLOAD_STAGE}"
+trap 'rm -rf "${STAGING_DIR}"' EXIT
+
+sudo install -d -m 0755 "${DATA_DIR}" "${BIN_DIR}" "${CONFIG_DIR}" "${LOG_DIR}"
+sudo install -d -m 0755 "$(dirname "${GRAFANA_CONFIG}")" "$(dirname "${LOKI_CONFIG}")" "$(dirname "${ALLOY_CONFIG}")" "${GRAFANA_DASHBOARDS}" "${GRAFANA_PROVISIONING}/datasources" "${GRAFANA_PROVISIONING}/dashboards"
 sudo install -d -m 0755 "${GRAFANA_DATA}" "${GRAFANA_LOGS}" "${LOKI_DATA}" "${ALLOY_DATA}"
 
 download() {
@@ -61,28 +68,35 @@ download() {
 resolve_grafana_url() {
   local arch="$1"
   local page
+  local page_file
+  local url
+  page_file="${STAGING_DIR}/grafana-download-page.html"
   if command -v curl >/dev/null 2>&1; then
-    page="$(curl -fsSL 'https://grafana.com/grafana/download?edition=oss' 2>/dev/null || true)"
+    curl -fsSL 'https://grafana.com/grafana/download?edition=oss' -o "${page_file}" 2>/dev/null || true
   elif command -v wget >/dev/null 2>&1; then
-    page="$(wget -qO- 'https://grafana.com/grafana/download?edition=oss' 2>/dev/null || true)"
-  else
-    page=""
+    wget -qO "${page_file}" 'https://grafana.com/grafana/download?edition=oss' 2>/dev/null || true
   fi
 
-  if [ -n "${page}" ]; then
-    PAGE_CONTENT="${page}" python3 - "${arch}" <<'PY'
+  if [ -s "${page_file}" ]; then
+    url="$(python3 - "${arch}" "${page_file}" <<'PY'
 import os
 import re
 import sys
 
 arch = sys.argv[1]
-page = os.environ.get("PAGE_CONTENT", "")
+page_file = sys.argv[2]
+with open(page_file, encoding="utf-8") as handle:
+    page = handle.read()
 pattern = re.compile(r'https://dl\.grafana\.com/grafana/release/[^"\']*grafana_[^"\']*_linux_' + re.escape(arch) + r'\.tar\.gz')
 match = pattern.search(page)
 if match:
     print(match.group(0))
 PY
-    return
+)"
+    if [ -n "${url}" ]; then
+      printf '%s\n' "${url}"
+      return
+    fi
   fi
 
   printf 'https://dl.grafana.com/grafana/release/%s/grafana_%s_%s_linux_%s.tar.gz\n' "${GRAFANA_VERSION}" "${GRAFANA_VERSION}" "${GRAFANA_BUILD}" "${arch}"
@@ -163,7 +177,7 @@ PY
 }
 
 install_grafana() {
-  local archive="${DOWNLOAD_DIR}/grafana.tar.gz"
+  local archive="${DOWNLOAD_STAGE}/grafana.tar.gz"
   local arch
   local url
   case "$(uname -m)" in
@@ -176,11 +190,13 @@ install_grafana() {
   esac
   url="$(resolve_grafana_url "${arch}")"
   download "${url}" "${archive}"
-  python_extract_tar_tree "${archive}" "${GRAFANA_HOME}"
+  python_extract_tar_tree "${archive}" "${GRAFANA_STAGE}"
+  sudo rm -rf "${GRAFANA_HOME}"
+  sudo mv "${GRAFANA_STAGE}" "${GRAFANA_HOME}"
 }
 
 install_loki() {
-  local archive="${DOWNLOAD_DIR}/loki.zip"
+  local archive="${DOWNLOAD_STAGE}/loki.zip"
   local arch
   case "$(uname -m)" in
     x86_64|amd64) arch="amd64" ;;
@@ -191,12 +207,12 @@ install_loki() {
       ;;
   esac
   download "https://github.com/grafana/loki/releases/download/v${LOKI_VERSION}/loki-linux-${arch}.zip" "${archive}"
-  python_extract_zip_binary "${archive}" "loki-linux-${arch}" "${DOWNLOAD_DIR}/loki"
-  sudo install -m 0755 "${DOWNLOAD_DIR}/loki" "${BIN_DIR}/loki"
+  python_extract_zip_binary "${archive}" "loki-linux-${arch}" "${DOWNLOAD_STAGE}/loki"
+  sudo install -m 0755 "${DOWNLOAD_STAGE}/loki" "${BIN_DIR}/loki"
 }
 
 install_alloy() {
-  local archive="${DOWNLOAD_DIR}/alloy.zip"
+  local archive="${DOWNLOAD_STAGE}/alloy.zip"
   local arch
   case "$(uname -m)" in
     x86_64|amd64) arch="amd64" ;;
@@ -207,8 +223,8 @@ install_alloy() {
       ;;
   esac
   download "https://github.com/grafana/alloy/releases/download/v${ALLOY_VERSION}/alloy-linux-${arch}.zip" "${archive}"
-  python_extract_zip_binary "${archive}" "alloy" "${DOWNLOAD_DIR}/alloy"
-  sudo install -m 0755 "${DOWNLOAD_DIR}/alloy" "${BIN_DIR}/alloy"
+  python_extract_zip_binary "${archive}" "alloy" "${DOWNLOAD_STAGE}/alloy"
+  sudo install -m 0755 "${DOWNLOAD_STAGE}/alloy" "${BIN_DIR}/alloy"
 }
 
 sudo systemctl disable --now resistack-observability.timer resistack-observability-ui.service >/dev/null 2>&1 || true
@@ -245,7 +261,7 @@ install_alloy
 sudo chown -R resistack-grafana:resistack-grafana "${GRAFANA_HOME}" "${GRAFANA_DATA}" "${GRAFANA_LOGS}"
 sudo chown -R resistack-loki:resistack-loki "${LOKI_DATA}"
 sudo chown -R resistack-alloy:resistack-alloy "${ALLOY_DATA}"
-sudo chown -R root:root "${CONFIG_DIR}" "${BIN_DIR}" "${LOG_DIR}" "${DOWNLOAD_DIR}"
+sudo chown -R root:root "${CONFIG_DIR}" "${BIN_DIR}" "${LOG_DIR}"
 `)
 
 	appendHeredoc(&b, "/tmp/resistack-observe", buildObserveScript())

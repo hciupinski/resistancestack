@@ -18,6 +18,9 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 		"resistack-observability-snapshot.timer",
 		"Grafana",
 		"Loki",
+		`STAGING_DIR="$(mktemp -d /tmp/resistack-observability.`,
+		`${GRAFANA_PROVISIONING}/datasources`,
+		`${GRAFANA_PROVISIONING}/dashboards`,
 		`OnUnitActiveSec=60s`,
 		`http://${PANEL_HOST}:${PANEL_PORT}/`,
 		"resistack-live-logs",
@@ -27,6 +30,9 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("expected enable script to contain %q", fragment)
 		}
+	}
+	if strings.Contains(got, "PAGE_CONTENT=") {
+		t.Fatal("expected enable script to avoid passing HTML through PAGE_CONTENT env var")
 	}
 }
 
