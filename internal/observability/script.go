@@ -486,6 +486,16 @@ def emit_line(path, payload):
     os.chmod(path, 0o644)
 
 
+def emit_security_event(event, **payload):
+    record = {
+        "source": "resistack_snapshot",
+        "kind": "security",
+        "event": event,
+    }
+    record.update(payload)
+    emit_line(security_path, record)
+
+
 def service_state(name):
     result = run(["systemctl", "is-active", name])
     status = result.stdout.strip() if result.returncode == 0 else "inactive"
@@ -650,6 +660,15 @@ for container in containers:
             "restarts": container["restarts"],
         },
     )
+    if container["restarts"] >= CONTAINER_RESTART_THRESHOLD:
+        emit_security_event(
+            "container_restart",
+            service=container["name"],
+            image=container["image"],
+            restarts=container["restarts"],
+            threshold=CONTAINER_RESTART_THRESHOLD,
+            active=True,
+        )
 
 for cert in certificates:
     emit_line(
@@ -664,6 +683,16 @@ for cert in certificates:
             "days_remaining": cert["days_remaining"],
         },
     )
+    if cert.get("days_remaining") is not None and cert["days_remaining"] <= CERT_THRESHOLD:
+        emit_security_event(
+            "certificate_expiry",
+            service="tls",
+            path=cert["path"],
+            expires_at=cert["expires_at"],
+            days_remaining=cert["days_remaining"],
+            threshold=CERT_THRESHOLD,
+            active=True,
+        )
 
 for item in healthchecks:
     emit_line(
@@ -680,33 +709,43 @@ for item in healthchecks:
             "error": item["error"],
         },
     )
+    if item["status"] != "healthy":
+        emit_security_event(
+            "healthcheck_issue",
+            service="healthcheck",
+            url=item["url"],
+            status=item["status"],
+            status_code=item["status_code"],
+            latency_ms=item["latency_ms"],
+            error=item["error"],
+            active=True,
+        )
 
-for banned in blocked_ips:
-    emit_line(
-        security_path,
-        {
-            "source": "resistack_snapshot",
-            "kind": "security",
-            "event": "blocked_ip",
-            "service": "fail2ban",
-            "jail": banned["jail"],
-            "ip": banned["ip"],
-            "active": True,
-        },
+if disk_percent is not None and disk_percent >= DISK_THRESHOLD:
+    emit_security_event(
+        "disk_pressure",
+        service="host",
+        disk_percent_used=disk_percent,
+        threshold=DISK_THRESHOLD,
+        active=True,
     )
 
-emit_line(
-    security_path,
-    {
-        "source": "resistack_snapshot",
-        "kind": "security",
-        "event": "security_summary",
-        "service": "resistack",
-        "active_bans": len(blocked_ips),
-        "ssh_failures_15m": payload["ssh_failures_15m"],
-        "bans_15m": payload["bans_15m"],
-        "nginx_errors_15m": payload["nginx_errors_15m"],
-    },
+for banned in blocked_ips:
+    emit_security_event(
+        "blocked_ip",
+        service="fail2ban",
+        jail=banned["jail"],
+        ip=banned["ip"],
+        active=True,
+    )
+
+emit_security_event(
+    "security_summary",
+    service="resistack",
+    active_bans=len(blocked_ips),
+    ssh_failures_15m=payload["ssh_failures_15m"],
+    bans_15m=payload["bans_15m"],
+    nginx_errors_15m=payload["nginx_errors_15m"],
 )
 
 alerts = []
@@ -723,17 +762,25 @@ if disk_percent is not None and disk_percent >= DISK_THRESHOLD:
 if any((cert.get("days_remaining") is not None and cert["days_remaining"] <= CERT_THRESHOLD) for cert in certificates):
     alerts.append("certificate_expiry_window")
 
+alert_summaries = {
+    "ssh_bruteforce": f"SSH failures reached {payload['ssh_failures_15m']} in 15m (threshold {SSH_THRESHOLD})",
+    "ban_burst": f"Fail2ban bans reached {payload['bans_15m']} in 15m (threshold {BAN_THRESHOLD})",
+    "nginx_4xx_5xx_anomaly": f"Nginx returned {payload['nginx_errors_15m']} 4xx/5xx responses in 15m (threshold {NGINX_THRESHOLD})",
+    "container_restarts": f"At least one container reached {CONTAINER_RESTART_THRESHOLD}+ restarts",
+    "disk_pressure": f"Root disk usage is {disk_percent}% (threshold {DISK_THRESHOLD}%)",
+    "certificate_expiry_window": f"At least one certificate expires within {CERT_THRESHOLD} days",
+}
+
 if alerts:
-    emit_line(
-        security_path,
-        {
-            "source": "resistack_snapshot",
-            "kind": "security",
-            "event": "alert",
-            "service": "resistack",
-            "alerts": alerts,
-        },
-    )
+    for alert_name in alerts:
+        emit_security_event(
+            "alert_item",
+            service="resistack",
+            alert_type=alert_name,
+            summary=alert_summaries.get(alert_name, alert_name),
+            active=True,
+        )
+    emit_security_event("alert", service="resistack", alerts=alerts)
     outgoing = json.dumps({"alerts": alerts, "snapshot": payload}).encode("utf-8")
     for endpoint in (WEBHOOK_URL, SLACK_URL):
         if not endpoint:
