@@ -73,6 +73,35 @@ resistack init
 
 This creates `resistack.yaml`.
 
+For multiple deployment environments, keep shared settings in `resistack.yaml` and add sparse sibling overlays such as:
+
+```text
+resistack.yaml
+resistack.dev.yaml
+resistack.prod.yaml
+```
+
+Select an environment explicitly when running a config-backed command:
+
+```bash
+resistack audit --env dev
+resistack apply host-hardening --env prod
+resistack ci generate --config ./ops/resistack.yaml --env prod
+```
+
+Overlay files should contain only environment-specific differences, for example:
+
+```yaml
+server:
+  host: "203.0.113.10"
+  private_key_path: "~/.ssh/id_ed25519_prod"
+
+host_hardening:
+  ufw_policy:
+    admin_allowlist:
+      - "198.51.100.10/32"
+```
+
 ### 2. Fill In Server Access
 
 At minimum, set:
@@ -212,6 +241,13 @@ resistack observability disable
 resistack rollback host
 ```
 
+All config-backed commands also accept:
+
+```bash
+--config <path>   # Base configuration file, defaults to resistack.yaml
+--env <name>      # Overlay name, resolved as resistack.<name>.yaml
+```
+
 ## Configuration Overview
 
 Main sections in `resistack.yaml`:
@@ -224,6 +260,8 @@ Main sections in `resistack.yaml`:
 - `ci`
 - `reporting`
 - `alerts`
+
+Use `resistack.yaml` as the shared base file. Put environment-specific overrides in sibling files such as `resistack.dev.yaml` and `resistack.prod.yaml`; only the fields present in the overlay replace base values.
 
 Important examples:
 

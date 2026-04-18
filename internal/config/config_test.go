@@ -266,3 +266,155 @@ host_hardening:
 		t.Fatal("expected merged github SARIF config to include inline comment")
 	}
 }
+
+func TestLoadWithEnv_BaseOnlyLoadsBaseConfig(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "resistack.yaml")
+
+	cfg := Default("demo")
+	cfg.Server.Host = "198.51.100.10"
+	cfg.Server.PrivateKeyPath = "~/.ssh/id_base"
+	cfg.HostHardening.UFWPolicy.AdminAllowlist = []string{"203.0.113.10/32"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	got, overlayPath, err := LoadWithEnv(path, "")
+	if err != nil {
+		t.Fatalf("load with env: %v", err)
+	}
+	if overlayPath != "" {
+		t.Fatalf("expected no overlay path, got %q", overlayPath)
+	}
+	if got.Server.Host != "198.51.100.10" {
+		t.Fatalf("unexpected host %q", got.Server.Host)
+	}
+	if got.Server.PrivateKeyPath != "~/.ssh/id_base" {
+		t.Fatalf("unexpected private key path %q", got.Server.PrivateKeyPath)
+	}
+	if len(got.HostHardening.UFWPolicy.AdminAllowlist) != 1 || got.HostHardening.UFWPolicy.AdminAllowlist[0] != "203.0.113.10/32" {
+		t.Fatalf("unexpected admin allowlist %#v", got.HostHardening.UFWPolicy.AdminAllowlist)
+	}
+}
+
+func TestLoadWithEnv_OverlayOverridesNestedValuesAndSlices(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "resistack.yaml")
+
+	cfg := Default("demo")
+	cfg.Server.Host = "198.51.100.10"
+	cfg.Server.PrivateKeyPath = "~/.ssh/id_base"
+	cfg.HostHardening.UFWPolicy.AdminAllowlist = []string{"203.0.113.10/32", "203.0.113.11/32"}
+	cfg.AppInventory.Domains = []string{"base.example.com"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	overlayPath := filepath.Join(root, "resistack.prod.yaml")
+	overlay := `server:
+  host: 203.0.113.20
+  private_key_path: ~/.ssh/id_prod
+host_hardening:
+  ufw_policy:
+    admin_allowlist:
+      - 198.51.100.50/32
+app_inventory:
+  domains:
+    - prod.example.com
+`
+	if err := os.WriteFile(overlayPath, []byte(overlay), 0o600); err != nil {
+		t.Fatalf("write overlay: %v", err)
+	}
+
+	got, gotOverlayPath, err := LoadWithEnv(path, "prod")
+	if err != nil {
+		t.Fatalf("load with env: %v", err)
+	}
+	if gotOverlayPath != overlayPath {
+		t.Fatalf("unexpected overlay path %q", gotOverlayPath)
+	}
+	if got.Server.Host != "203.0.113.20" {
+		t.Fatalf("unexpected host %q", got.Server.Host)
+	}
+	if got.Server.PrivateKeyPath != "~/.ssh/id_prod" {
+		t.Fatalf("unexpected private key path %q", got.Server.PrivateKeyPath)
+	}
+	if len(got.HostHardening.UFWPolicy.AdminAllowlist) != 1 || got.HostHardening.UFWPolicy.AdminAllowlist[0] != "198.51.100.50/32" {
+		t.Fatalf("unexpected admin allowlist %#v", got.HostHardening.UFWPolicy.AdminAllowlist)
+	}
+	if len(got.AppInventory.Domains) != 1 || got.AppInventory.Domains[0] != "prod.example.com" {
+		t.Fatalf("unexpected domains %#v", got.AppInventory.Domains)
+	}
+}
+
+func TestLoadWithEnv_MissingOverlayReturnsClearError(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "resistack.yaml")
+
+	cfg := Default("demo")
+	cfg.HostHardening.UFWPolicy.AdminAllowlist = []string{"203.0.113.10/32"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	_, overlayPath, err := LoadWithEnv(path, "prod")
+	if err == nil {
+		t.Fatal("expected missing overlay error")
+	}
+	if overlayPath != filepath.Join(root, "resistack.prod.yaml") {
+		t.Fatalf("unexpected overlay path %q", overlayPath)
+	}
+	if got := err.Error(); !strings.Contains(got, `environment overlay "prod" not found`) || !strings.Contains(got, overlayPath) {
+		t.Fatalf("unexpected error %q", got)
+	}
+}
+
+func TestLoadWithEnv_DerivesSiblingOverlayPathForCustomBase(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "resistack.yml")
+
+	cfg := Default("demo")
+	cfg.Server.Host = "198.51.100.10"
+	cfg.HostHardening.UFWPolicy.AdminAllowlist = []string{"203.0.113.10/32"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	overlayPath := filepath.Join(root, "resistack.qa.yml")
+	overlay := `server:
+  host: 203.0.113.55
+`
+	if err := os.WriteFile(overlayPath, []byte(overlay), 0o600); err != nil {
+		t.Fatalf("write overlay: %v", err)
+	}
+
+	got, gotOverlayPath, err := LoadWithEnv(path, "qa")
+	if err != nil {
+		t.Fatalf("load with env: %v", err)
+	}
+	if gotOverlayPath != overlayPath {
+		t.Fatalf("unexpected overlay path %q", gotOverlayPath)
+	}
+	if got.Server.Host != "203.0.113.55" {
+		t.Fatalf("unexpected host %q", got.Server.Host)
+	}
+}
+
+func TestLoadWithEnv_RejectsInvalidEnvironmentName(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "resistack.yaml")
+
+	cfg := Default("demo")
+	cfg.HostHardening.UFWPolicy.AdminAllowlist = []string{"203.0.113.10/32"}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	_, _, err := LoadWithEnv(path, "Prod!")
+	if err == nil {
+		t.Fatal("expected invalid environment error")
+	}
+	if got := err.Error(); !strings.Contains(got, `invalid environment "Prod!"`) {
+		t.Fatalf("unexpected error %q", got)
+	}
+}
