@@ -25,6 +25,12 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 		`http://${PANEL_HOST}:${PANEL_PORT}/`,
 		"resistack-live-logs",
 		`loki.source.journal "systemd"`,
+		`python_extract_zip_binary "${archive}" "loki-linux-${arch},loki"`,
+		`python_extract_zip_binary "${archive}" "alloy,alloy-linux-${arch},alloy-boringcrypto-linux-${arch}"`,
+		`header.startswith(b"\x7fELF")`,
+		`CURRENT_STEP="initializing observability installer"`,
+		`log_step "enabling and starting observability services"`,
+		`failed during: %s`,
 	}
 	for _, fragment := range required {
 		if !strings.Contains(got, fragment) {
@@ -33,6 +39,9 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 	}
 	if strings.Contains(got, "PAGE_CONTENT=") {
 		t.Fatal("expected enable script to avoid passing HTML through PAGE_CONTENT env var")
+	}
+	if strings.Contains(got, "os.access(output, os.X_OK)") {
+		t.Fatal("expected enable script to avoid output-path execute checks while selecting zip members")
 	}
 }
 

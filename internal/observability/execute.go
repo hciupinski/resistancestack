@@ -15,6 +15,7 @@ func Enable(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) err
 		_, _ = fmt.Fprintln(out, script)
 		return nil
 	}
+	_, _ = fmt.Fprintf(out, "[resistack] enabling observability on %s:%d\n", target.Host, target.Port)
 	return remote.RunScript(target, script, out, errOut)
 }
 

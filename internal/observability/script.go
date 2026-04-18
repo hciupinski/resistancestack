@@ -34,18 +34,33 @@ func BuildEnableScript(cfg config.Config) string {
 	fmt.Fprintf(&b, "OBS_ENV_FILE=%s\n", scriptutil.ShellQuote("/etc/default/resistack-observability"))
 	fmt.Fprintf(&b, "SNAPSHOT_INTERVAL=%s\n", scriptutil.ShellQuote(systemdInterval(cfg.Observability.SnapshotInterval)))
 	fmt.Fprintf(&b, "PANEL_HOST=%s\n", scriptutil.ShellQuote(host))
-fmt.Fprintf(&b, "PANEL_PORT=%s\n", scriptutil.ShellQuote(port))
-fmt.Fprintf(&b, "GRAFANA_VERSION=%s\n", scriptutil.ShellQuote(grafanaVersion))
+	fmt.Fprintf(&b, "PANEL_PORT=%s\n", scriptutil.ShellQuote(port))
+	fmt.Fprintf(&b, "GRAFANA_VERSION=%s\n", scriptutil.ShellQuote(grafanaVersion))
 	fmt.Fprintf(&b, "GRAFANA_BUILD=%s\n", scriptutil.ShellQuote(grafanaBuild))
 	fmt.Fprintf(&b, "LOKI_VERSION=%s\n", scriptutil.ShellQuote(lokiVersion))
 	fmt.Fprintf(&b, "ALLOY_VERSION=%s\n", scriptutil.ShellQuote(alloyVersion))
-		b.WriteString(`
+	b.WriteString(`
+CURRENT_STEP="initializing observability installer"
 STAGING_DIR="$(mktemp -d /tmp/resistack-observability.XXXXXX)"
 DOWNLOAD_STAGE="${STAGING_DIR}/downloads"
 GRAFANA_STAGE="${STAGING_DIR}/grafana-home"
+
+log() {
+  printf '[resistack] %s\n' "$1"
+}
+
+log_step() {
+  CURRENT_STEP="$1"
+  log "$1"
+}
+
+trap 'rc=$?; printf "[resistack] failed during: %s\n" "${CURRENT_STEP}" >&2; exit "${rc}"' ERR
+
+log_step "preparing observability staging under ${STAGING_DIR}"
 mkdir -p "${DOWNLOAD_STAGE}"
 trap 'rm -rf "${STAGING_DIR}"' EXIT
 
+log_step "ensuring observability directories exist"
 sudo install -d -m 0755 "${DATA_DIR}" "${BIN_DIR}" "${CONFIG_DIR}" "${LOG_DIR}"
 sudo install -d -m 0755 "$(dirname "${GRAFANA_CONFIG}")" "$(dirname "${LOKI_CONFIG}")" "$(dirname "${ALLOY_CONFIG}")" "${GRAFANA_DASHBOARDS}" "${GRAFANA_PROVISIONING}/datasources" "${GRAFANA_PROVISIONING}/dashboards"
 sudo install -d -m 0755 "${GRAFANA_DATA}" "${GRAFANA_LOGS}" "${LOKI_DATA}" "${ALLOY_DATA}"
@@ -53,6 +68,7 @@ sudo install -d -m 0755 "${GRAFANA_DATA}" "${GRAFANA_LOGS}" "${LOKI_DATA}" "${AL
 download() {
   local url="$1"
   local dest="$2"
+  log "downloading ${url}"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --retry 3 --retry-delay 1 "${url}" -o "${dest}"
     return
@@ -67,9 +83,9 @@ download() {
 
 resolve_grafana_url() {
   local arch="$1"
-  local page
   local page_file
   local url
+  log "resolving Grafana OSS download URL for ${arch}"
   page_file="${STAGING_DIR}/grafana-download-page.html"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL 'https://grafana.com/grafana/download?edition=oss' -o "${page_file}" 2>/dev/null || true
@@ -94,11 +110,13 @@ if match:
 PY
 )"
     if [ -n "${url}" ]; then
+      log "resolved Grafana download URL from grafana.com"
       printf '%s\n' "${url}"
       return
     fi
   fi
 
+  log "falling back to pinned Grafana download URL"
   printf 'https://dl.grafana.com/grafana/release/%s/grafana_%s_%s_linux_%s.tar.gz\n' "${GRAFANA_VERSION}" "${GRAFANA_VERSION}" "${GRAFANA_BUILD}" "${arch}"
 }
 
@@ -120,28 +138,77 @@ add_user_to_group_if_present() {
 
 python_extract_zip_binary() {
   local archive="$1"
-  local binary_name="$2"
+  local binary_names="$2"
   local output="$3"
-  python3 - "${archive}" "${binary_name}" "${output}" <<'PY'
+  python3 - "${archive}" "${binary_names}" "${output}" <<'PY'
 import os
 import stat
 import sys
 import zipfile
 
-archive, binary_name, output = sys.argv[1:]
+archive, binary_names, output = sys.argv[1:]
+candidates = [name for name in binary_names.split(",") if name]
+doc_suffixes = (".md", ".txt", ".json", ".yaml", ".yml", ".sha256", ".sha256sum", ".asc", ".sig", ".pem", ".key", ".crt", ".license", ".html")
+
+def is_probably_binary(handle, member):
+    try:
+        with handle.open(member) as src:
+            header = src.read(4)
+    except Exception:
+        return False
+    return header.startswith(b"\x7fELF") or header.startswith(b"MZ")
+
 with zipfile.ZipFile(archive) as handle:
+    files = []
     for member in handle.infolist():
         if member.filename.endswith("/"):
             continue
-        name = os.path.basename(member.filename)
-        if name != binary_name:
+        basename = os.path.basename(member.filename)
+        if not basename:
             continue
-        with handle.open(member) as src, open(output, "wb") as dst:
-            dst.write(src.read())
-        os.chmod(output, os.stat(output).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        break
-    else:
-        raise SystemExit(f"missing {binary_name} in {archive}")
+        files.append((basename, member))
+
+    selected = None
+
+    for candidate in candidates:
+        for basename, member in files:
+            if basename == candidate or member.filename == candidate:
+                selected = member
+                break
+        if selected is not None:
+            break
+
+    if selected is None:
+        for candidate in candidates:
+            prefix = candidate + "-"
+            for basename, member in files:
+                if basename.startswith(prefix) or candidate in basename:
+                    selected = member
+                    break
+            if selected is not None:
+                break
+
+    if selected is None:
+        binary_candidates = []
+        for basename, member in files:
+            if basename.lower().endswith(doc_suffixes):
+                continue
+            exec_bits = (member.external_attr >> 16) & 0o111
+            if exec_bits or is_probably_binary(handle, member):
+                binary_candidates.append(member)
+        if len(binary_candidates) == 1:
+            selected = binary_candidates[0]
+
+    if selected is None and len(files) == 1:
+        selected = files[0][1]
+
+    if selected is None:
+        available = ", ".join(name for name, _ in files)
+        raise SystemExit(f"missing {binary_names} in {archive}; available: {available}")
+
+    with handle.open(selected) as src, open(output, "wb") as dst:
+        dst.write(src.read())
+    os.chmod(output, os.stat(output).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 PY
 }
 
@@ -188,6 +255,7 @@ install_grafana() {
       exit 1
       ;;
   esac
+  log_step "installing Grafana ${GRAFANA_VERSION} for ${arch}"
   url="$(resolve_grafana_url "${arch}")"
   download "${url}" "${archive}"
   python_extract_tar_tree "${archive}" "${GRAFANA_STAGE}"
@@ -206,8 +274,9 @@ install_loki() {
       exit 1
       ;;
   esac
+  log_step "installing Loki ${LOKI_VERSION} for ${arch}"
   download "https://github.com/grafana/loki/releases/download/v${LOKI_VERSION}/loki-linux-${arch}.zip" "${archive}"
-  python_extract_zip_binary "${archive}" "loki-linux-${arch}" "${DOWNLOAD_STAGE}/loki"
+  python_extract_zip_binary "${archive}" "loki-linux-${arch},loki" "${DOWNLOAD_STAGE}/loki"
   sudo install -m 0755 "${DOWNLOAD_STAGE}/loki" "${BIN_DIR}/loki"
 }
 
@@ -222,11 +291,13 @@ install_alloy() {
       exit 1
       ;;
   esac
+  log_step "installing Alloy ${ALLOY_VERSION} for ${arch}"
   download "https://github.com/grafana/alloy/releases/download/v${ALLOY_VERSION}/alloy-linux-${arch}.zip" "${archive}"
-  python_extract_zip_binary "${archive}" "alloy" "${DOWNLOAD_STAGE}/alloy"
+  python_extract_zip_binary "${archive}" "alloy,alloy-linux-${arch},alloy-boringcrypto-linux-${arch}" "${DOWNLOAD_STAGE}/alloy"
   sudo install -m 0755 "${DOWNLOAD_STAGE}/alloy" "${BIN_DIR}/alloy"
 }
 
+log_step "removing legacy observability units"
 sudo systemctl disable --now resistack-observability.timer resistack-observability-ui.service >/dev/null 2>&1 || true
 sudo systemctl stop resistack-observability.service >/dev/null 2>&1 || true
 sudo rm -f /etc/systemd/system/resistack-observability.service
@@ -234,6 +305,7 @@ sudo rm -f /etc/systemd/system/resistack-observability.timer
 sudo rm -f /etc/systemd/system/resistack-observability-ui.service
 sudo systemctl stop resistack-grafana.service resistack-loki.service resistack-alloy.service >/dev/null 2>&1 || true
 
+log_step "ensuring observability service users exist"
 ensure_system_user "resistack-grafana" "${DATA_DIR}"
 ensure_system_user "resistack-loki" "${DATA_DIR}"
 ensure_system_user "resistack-alloy" "${DATA_DIR}"
@@ -241,6 +313,7 @@ add_user_to_group_if_present "resistack-alloy" "adm"
 add_user_to_group_if_present "resistack-alloy" "systemd-journal"
 add_user_to_group_if_present "resistack-alloy" "docker"
 
+log_step "preparing Grafana admin credentials"
 if [ ! -s "${GRAFANA_CREDENTIALS}" ]; then
   admin_password="$(python3 - <<'PY'
 import secrets
@@ -264,60 +337,77 @@ sudo chown -R resistack-alloy:resistack-alloy "${ALLOY_DATA}"
 sudo chown -R root:root "${CONFIG_DIR}" "${BIN_DIR}" "${LOG_DIR}"
 `)
 
+	b.WriteString("log_step \"writing Resistack observability snapshot script\"\n")
 	appendHeredoc(&b, "/tmp/resistack-observe", buildObserveScript())
 	b.WriteString("sudo mv /tmp/resistack-observe " + paths.observeBinary + "\n")
 	b.WriteString("sudo chmod 0755 " + paths.observeBinary + "\n\n")
 
+	b.WriteString("log_step \"writing observability environment file\"\n")
 	appendHeredoc(&b, "/tmp/resistack-observability.env", buildEnvFile(cfg, paths, host, port))
 	b.WriteString("sudo mv /tmp/resistack-observability.env \"${OBS_ENV_FILE}\"\n\n")
 
+	b.WriteString("log_step \"writing Grafana configuration\"\n")
 	appendHeredoc(&b, "/tmp/resistack-grafana.ini", buildGrafanaConfig(paths, host, port))
 	b.WriteString("sed -e \"s#__RESISTACK_ADMIN_PASSWORD__#${admin_password//\\/\\\\}#g\" /tmp/resistack-grafana.ini | sudo tee \"${GRAFANA_CONFIG}\" >/dev/null\n")
 	b.WriteString("rm -f /tmp/resistack-grafana.ini\n\n")
 
+	b.WriteString("log_step \"writing Loki configuration\"\n")
 	appendHeredoc(&b, "/tmp/resistack-loki.yaml", buildLokiConfig(cfg, paths))
 	b.WriteString("sudo mv /tmp/resistack-loki.yaml \"${LOKI_CONFIG}\"\n\n")
 
+	b.WriteString("log_step \"writing Alloy configuration\"\n")
 	appendHeredoc(&b, "/tmp/resistack-alloy.alloy", buildAlloyConfig(cfg, paths))
 	b.WriteString("sudo mv /tmp/resistack-alloy.alloy \"${ALLOY_CONFIG}\"\n\n")
 
+	b.WriteString("log_step \"writing Grafana datasource provisioning\"\n")
 	appendHeredoc(&b, "/tmp/resistack-datasource.yaml", buildDatasourcesProvisioning())
 	b.WriteString("sudo mv /tmp/resistack-datasource.yaml \"" + path.Join(paths.grafanaProvision, "datasources", "loki.yaml") + "\"\n\n")
 
+	b.WriteString("log_step \"writing Grafana dashboard provisioning\"\n")
 	appendHeredoc(&b, "/tmp/resistack-dashboard-provider.yaml", buildDashboardProvider(paths))
 	b.WriteString("sudo mv /tmp/resistack-dashboard-provider.yaml \"" + path.Join(paths.grafanaProvision, "dashboards", "resistack.yaml") + "\"\n\n")
 
+	b.WriteString("log_step \"installing Grafana dashboards\"\n")
 	for name, dashboard := range buildDashboards() {
 		tmpPath := "/tmp/" + name
 		appendHeredoc(&b, tmpPath, dashboard)
 		fmt.Fprintf(&b, "sudo mv %s %s\n\n", scriptutil.ShellQuote(tmpPath), scriptutil.ShellQuote(path.Join(paths.grafanaDashboards, name)))
 	}
 
+	b.WriteString("log_step \"writing snapshot systemd units\"\n")
 	appendHeredoc(&b, "/tmp/resistack-observability-snapshot.service", buildSnapshotService(paths))
 	b.WriteString("sudo mv /tmp/resistack-observability-snapshot.service /etc/systemd/system/resistack-observability-snapshot.service\n\n")
 
 	appendHeredoc(&b, "/tmp/resistack-observability-snapshot.timer", buildSnapshotTimer(cfg))
 	b.WriteString("sudo mv /tmp/resistack-observability-snapshot.timer /etc/systemd/system/resistack-observability-snapshot.timer\n\n")
 
+	b.WriteString("log_step \"writing Loki service unit\"\n")
 	appendHeredoc(&b, "/tmp/resistack-loki.service", buildLokiService(paths))
 	b.WriteString("sudo mv /tmp/resistack-loki.service /etc/systemd/system/resistack-loki.service\n\n")
 
+	b.WriteString("log_step \"writing Alloy service unit\"\n")
 	appendHeredoc(&b, "/tmp/resistack-alloy.service", buildAlloyService(paths))
 	b.WriteString("sudo mv /tmp/resistack-alloy.service /etc/systemd/system/resistack-alloy.service\n\n")
 
+	b.WriteString("log_step \"writing Grafana service unit\"\n")
 	appendHeredoc(&b, "/tmp/resistack-grafana.service", buildGrafanaService(paths))
 	b.WriteString("sudo mv /tmp/resistack-grafana.service /etc/systemd/system/resistack-grafana.service\n\n")
 
 	b.WriteString(`
+log_step "finalizing observability permissions"
 sudo chown root:root "${OBS_ENV_FILE}" "${GRAFANA_CONFIG}" "${LOKI_CONFIG}" "${ALLOY_CONFIG}"
 sudo chmod 0644 "${OBS_ENV_FILE}" "${GRAFANA_CONFIG}" "${LOKI_CONFIG}" "${ALLOY_CONFIG}"
 sudo chown -R root:root "${GRAFANA_DASHBOARDS}" "${CONFIG_DIR}"
 sudo chown -R root:root "$(dirname "${GRAFANA_CONFIG}")"
 
+log_step "reloading systemd"
 sudo systemctl daemon-reload
+log_step "enabling and starting observability services"
 sudo systemctl enable --now resistack-loki.service resistack-alloy.service resistack-grafana.service resistack-observability-snapshot.timer
+log_step "running initial observability snapshot"
 sudo systemctl start resistack-observability-snapshot.service
 
+log_step "observability installer completed"
 echo "[resistack] observability enabled on http://${PANEL_HOST}:${PANEL_PORT}/"
 echo "[resistack] grafana credentials: ${GRAFANA_CREDENTIALS}"
 `)
