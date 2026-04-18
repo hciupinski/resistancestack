@@ -42,10 +42,11 @@ This module does not manage nginx application config or app containers beyond re
 
 ### `security-observability`
 
-- local `systemd` timer for snapshot collection
+- local `systemd` timer for structured snapshot collection
+- Grafana OSS, Loki, and Grafana Alloy managed as local-only services
 - journald, nginx, docker, and fail2ban signal gathering
-- container restart, disk pressure, and certificate inventory checks
-- local-only HTTP file view bound outside the public app ingress
+- container restart, disk pressure, certificate, healthcheck, and blocked-IP views
+- local-only Grafana UI bound outside the public app ingress
 
 ### `ci-security`
 

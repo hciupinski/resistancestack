@@ -55,6 +55,26 @@ func TestCheck_InvalidHealthcheckURLReturnsError(t *testing.T) {
 	}
 }
 
+func TestCheck_InvalidSnapshotIntervalReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Observability.SnapshotInterval = "sometimes"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_InvalidRetentionDaysReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Observability.RetentionDays = 0
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
 func TestCheck_InvalidOperatorAccessModeReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.HostHardening.UFWPolicy.OperatorAccessMode = "invalid"

@@ -34,6 +34,26 @@ func formatStatus(snapshot inventory.Snapshot, report audit.Report) string {
 	fmt.Fprintf(&b, "UFW: %s\n", snapshot.UFW.Status)
 	fmt.Fprintf(&b, "Fail2ban: %s\n", snapshot.Fail2ban.Status)
 	fmt.Fprintf(&b, "Observability: %s\n", snapshot.Observability.Status)
+	if snapshot.Observability.DashboardURL != "" {
+		fmt.Fprintf(&b, "Dashboard: %s\n", snapshot.Observability.DashboardURL)
+	}
+	if snapshot.Observability.CredentialsPath != "" {
+		fmt.Fprintf(&b, "Dashboard credentials: %s\n", snapshot.Observability.CredentialsPath)
+	}
+	if snapshot.Observability.LastSnapshotAt != "" {
+		fmt.Fprintf(&b, "Last snapshot: %s\n", snapshot.Observability.LastSnapshotAt)
+	}
+	if snapshot.Observability.Enabled {
+		fmt.Fprintf(
+			&b,
+			"Observability services: snapshot=%s timer=%s grafana=%s loki=%s alloy=%s\n",
+			snapshot.Observability.SnapshotService.Status,
+			snapshot.Observability.SnapshotTimer.Status,
+			snapshot.Observability.GrafanaService.Status,
+			snapshot.Observability.LokiService.Status,
+			snapshot.Observability.AlloyService.Status,
+		)
+	}
 	fmt.Fprintf(&b, "Security posture: %s\n", report.Summary.TopSeverity)
 	fmt.Fprintf(&b, "Findings: critical=%d high=%d medium=%d low=%d\n",
 		report.Summary.BySeverity[config.SeverityCritical],

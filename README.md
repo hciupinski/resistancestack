@@ -179,6 +179,9 @@ This installs a local baseline for:
 - docker logs
 - fail2ban activity
 - host metrics and runtime snapshots
+- a local-only Grafana dashboard backed by Loki and Alloy
+
+It preserves `latest.json` on disk for compatibility, but the exposed `observability.panel_bind` address now serves the Grafana UI at `/`.
 
 Disable it when needed:
 
@@ -228,7 +231,9 @@ Important examples:
 - `host_hardening.ufw_policy`: default firewall policy, operator access mode, current-session preservation, and optional admin allowlist
 - `host_hardening.fail2ban`: ban windows and retry thresholds
 - `host_hardening.ssl_certificates`: managed local TLS checks and optional Let's Encrypt auto-issue for `app_inventory.domains[0]`
-- `observability.panel_bind`: local bind for the observability view
+- `observability.panel_bind`: local bind for the Grafana observability view
+- `observability.snapshot_interval`: cadence for Resistack snapshot generation
+- `observability.retention_days`: local Loki retention window in days
 - `ci.mode`: `warn-only` or `enforced`
 - `ci.github.sarif_upload_mode`: `auto`, `enabled`, or `disabled`
 - `alerts.thresholds`: brute force, bans, nginx errors, restarts, disk, and certificate thresholds

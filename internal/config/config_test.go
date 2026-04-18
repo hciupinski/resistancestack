@@ -65,6 +65,8 @@ observability:
   host_metrics: true
   panel_bind: 127.0.0.1:9400
   local_data_dir: /var/lib/resistack/observability
+  snapshot_interval: 1m
+  retention_days: 7
 ci:
   provider: github_actions
   generate_workflows: true
@@ -126,6 +128,12 @@ alerts:
 	if cfg.HostHardening.SSLCertificates.Email != "security@example.com" {
 		t.Fatalf("unexpected ssl cert email: %q", cfg.HostHardening.SSLCertificates.Email)
 	}
+	if cfg.Observability.SnapshotInterval != "1m" {
+		t.Fatalf("unexpected snapshot interval: %q", cfg.Observability.SnapshotInterval)
+	}
+	if cfg.Observability.RetentionDays != 7 {
+		t.Fatalf("unexpected retention days: %d", cfg.Observability.RetentionDays)
+	}
 }
 
 func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
@@ -156,6 +164,9 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	}
 	if !strings.Contains(text, "sarif_upload_mode: auto # SARIF upload strategy. Options: auto, enabled, disabled.") {
 		t.Fatal("expected inline comment for ci.github.sarif_upload_mode")
+	}
+	if !strings.Contains(text, "snapshot_interval: 1m # Interval used for Resistack snapshot generation.") {
+		t.Fatal("expected inline comment for snapshot_interval")
 	}
 	if !strings.Contains(text, "- 22 # TCP port kept reachable on the host.") {
 		t.Fatal("expected inline comment for allowed_tcp_ports entries")
