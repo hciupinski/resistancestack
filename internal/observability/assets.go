@@ -19,26 +19,26 @@ const (
 )
 
 type observabilityPaths struct {
-	dataDir            string
-	binDir             string
-	configDir          string
-	logDir             string
-	downloadDir        string
-	grafanaHome        string
-	grafanaData        string
-	grafanaLogs        string
-	grafanaConfig      string
-	grafanaDashboards  string
-	grafanaProvision   string
-	grafanaCreds       string
-	lokiData           string
-	lokiConfig         string
-	alloyData          string
-	alloyConfig        string
-	snapshotLatest     string
-	snapshotGlob       string
-	securityGlob       string
-	observeBinary      string
+	dataDir           string
+	binDir            string
+	configDir         string
+	logDir            string
+	downloadDir       string
+	grafanaHome       string
+	grafanaData       string
+	grafanaLogs       string
+	grafanaConfig     string
+	grafanaDashboards string
+	grafanaProvision  string
+	grafanaCreds      string
+	lokiData          string
+	lokiConfig        string
+	alloyData         string
+	alloyConfig       string
+	snapshotLatest    string
+	snapshotGlob      string
+	securityGlob      string
+	observeBinary     string
 }
 
 func buildPaths(dataDir string) observabilityPaths {
@@ -383,11 +383,11 @@ providers:
 
 func buildDashboards() map[string]string {
 	return map[string]string{
-		"overview.json":       mustDashboardJSON(buildOverviewDashboard()),
-		"live-logs.json":      mustDashboardJSON(buildLiveLogsDashboard()),
+		"overview.json":        mustDashboardJSON(buildOverviewDashboard()),
+		"live-logs.json":       mustDashboardJSON(buildLiveLogsDashboard()),
 		"security-events.json": mustDashboardJSON(buildSecurityDashboard()),
-		"blocked-ips.json":    mustDashboardJSON(buildBlockedIPsDashboard()),
-		"web-activity.json":   mustDashboardJSON(buildWebActivityDashboard()),
+		"blocked-ips.json":     mustDashboardJSON(buildBlockedIPsDashboard()),
+		"web-activity.json":    mustDashboardJSON(buildWebActivityDashboard()),
 	}
 }
 
@@ -398,8 +398,9 @@ func buildOverviewDashboard() map[string]any {
 		[]map[string]any{
 			statPanel(
 				1,
-				"Disk Used %",
-				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap disk_percent_used [15m])`,
+				"Active Blocked IPs",
+				`last_over_time({source="resistack_snapshot",kind="security"} | json | event="security_summary" | unwrap active_bans [15m])`,
+				"short",
 				0,
 				0,
 				6,
@@ -409,6 +410,7 @@ func buildOverviewDashboard() map[string]any {
 				2,
 				"SSH Failures (15m)",
 				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap ssh_failures_15m [15m])`,
+				"short",
 				6,
 				0,
 				6,
@@ -418,6 +420,7 @@ func buildOverviewDashboard() map[string]any {
 				3,
 				"Fail2ban Bans (15m)",
 				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap bans_15m [15m])`,
+				"short",
 				12,
 				0,
 				6,
@@ -427,28 +430,63 @@ func buildOverviewDashboard() map[string]any {
 				4,
 				"Nginx Errors (15m)",
 				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap nginx_errors_15m [15m])`,
+				"short",
 				18,
 				0,
-				6,
+				3,
 				4,
 			),
-			logsPanel(
+			statPanel(
 				5,
-				"Latest Snapshot Records",
-				`{source="resistack_snapshot",kind="snapshot"} | json`,
+				"Alert Signals (15m)",
+				`sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="alert_item" [15m]))`,
+				"short",
+				21,
+				0,
+				3,
+				4,
+			),
+			timeseriesPanel(
+				6,
+				"Attack Pressure",
+				"short",
 				0,
 				4,
 				12,
-				12,
+				8,
+				rangeTarget("A", `last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap ssh_failures_15m [15m])`, "SSH failures (15m)"),
+				rangeTarget("B", `last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap bans_15m [15m])`, "Fail2ban bans (15m)"),
+				rangeTarget("C", `last_over_time({source="resistack_snapshot",kind="security"} | json | event="security_summary" | unwrap active_bans [15m])`, "Active blocked IPs"),
 			),
-			logsPanel(
-				6,
-				"Security Snapshot Records",
-				`{source="resistack_snapshot",kind="security"} | json`,
+			timeseriesPanel(
+				7,
+				"Operational Risk Signals",
+				"short",
 				12,
 				4,
 				12,
+				8,
+				rangeTarget("A", `last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap nginx_errors_15m [15m])`, "Nginx errors (15m)"),
+				rangeTarget("B", `sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="alert_item" [5m]))`, "Alerts (5m)"),
+				rangeTarget("C", `sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="healthcheck_issue" [5m]))`, "Healthcheck issues (5m)"),
+			),
+			logsPanel(
+				8,
+				"Actionable Alerts",
+				`{source="resistack_snapshot",kind="security"} | json | event="alert_item" | line_format "{{.alert_type}}: {{.summary}}"`,
+				0,
 				12,
+				12,
+				10,
+			),
+			logsPanel(
+				9,
+				"Degraded Healthchecks",
+				`{source="resistack_snapshot",kind="security"} | json | event="healthcheck_issue" | line_format "{{.status}} {{.url}} status={{.status_code}} latency={{.latency_ms}}ms"`,
+				12,
+				12,
+				12,
+				10,
 			),
 		},
 	)
@@ -457,12 +495,97 @@ func buildOverviewDashboard() map[string]any {
 func buildLiveLogsDashboard() map[string]any {
 	return dashboard(
 		"resistack-live-logs",
-		"ResistanceStack Live Logs",
+		"ResistanceStack Runtime Health",
 		[]map[string]any{
-			logsPanel(1, "Journald", `{source="journald"}`, 0, 0, 12, 10),
-			logsPanel(2, "Docker", `{source="docker"}`, 12, 0, 12, 10),
-			logsPanel(3, "Nginx", `{source="nginx"}`, 0, 10, 12, 10),
-			logsPanel(4, "Fail2ban", `{source="fail2ban"}`, 12, 10, 12, 10),
+			statPanel(
+				1,
+				"Containers Running",
+				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap containers_running [15m])`,
+				"short",
+				0,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				2,
+				"Disk Used %",
+				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap disk_percent_used [15m])`,
+				"percent",
+				6,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				3,
+				"Restart Risks (15m)",
+				`sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="container_restart" [15m]))`,
+				"short",
+				12,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				4,
+				"Certificate Risks (15m)",
+				`sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="certificate_expiry" [15m]))`,
+				"short",
+				18,
+				0,
+				6,
+				4,
+			),
+			timeseriesPanel(
+				5,
+				"Service Health Signals",
+				"short",
+				0,
+				4,
+				12,
+				8,
+				rangeTarget("A", `sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="healthcheck_issue" [5m]))`, "Healthcheck issues (5m)"),
+				rangeTarget("B", `sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="container_restart" [15m]))`, "Restart risks (15m)"),
+				rangeTarget("C", `sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="certificate_expiry" [15m]))`, "Certificate risks (15m)"),
+			),
+			timeseriesPanel(
+				6,
+				"Healthcheck Latency",
+				"ms",
+				12,
+				4,
+				12,
+				8,
+				rangeTarget("A", `avg_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="healthcheck" | unwrap latency_ms [15m])`, "Average latency"),
+			),
+			logsPanel(
+				7,
+				"Service States",
+				`{source="resistack_snapshot",kind="snapshot"} | json | event="service_state" | line_format "{{.service}} is {{.status}} enabled={{.enabled}}"`,
+				0,
+				12,
+				12,
+				10,
+			),
+			logsPanel(
+				8,
+				"Container States",
+				`{source="resistack_snapshot",kind="snapshot"} | json | event="container_state" | line_format "{{.service}} is {{.status}} restarts={{.restarts}} image={{.image}}"`,
+				12,
+				12,
+				12,
+				10,
+			),
+			logsPanel(
+				9,
+				"Runtime Error Feed",
+				`{source=~"journald|docker"} |~ "(?i)error|panic|exception|fatal"`,
+				0,
+				22,
+				24,
+				8,
+			),
 		},
 	)
 }
@@ -472,50 +595,86 @@ func buildSecurityDashboard() map[string]any {
 		"resistack-security-events",
 		"ResistanceStack Security Events",
 		[]map[string]any{
-			timeseriesPanel(
+			statPanel(
 				1,
-				"SSH Failures",
+				"SSH Failures (15m)",
 				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap ssh_failures_15m [15m])`,
+				"short",
 				0,
 				0,
-				8,
-				8,
+				6,
+				4,
 			),
-			timeseriesPanel(
+			statPanel(
 				2,
-				"Fail2ban Bans",
+				"Fail2ban Bans (15m)",
 				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap bans_15m [15m])`,
-				8,
+				"short",
+				6,
 				0,
-				8,
-				8,
+				6,
+				4,
 			),
 			statPanel(
 				3,
 				"Active Blocked IPs",
 				`last_over_time({source="resistack_snapshot",kind="security"} | json | event="security_summary" | unwrap active_bans [15m])`,
-				16,
+				"short",
+				12,
 				0,
-				8,
-				8,
-			),
-			logsPanel(
+				6,
 				4,
-				"Recent Security Snapshot Events",
-				`{source="resistack_snapshot",kind="security"} | json`,
+			),
+			statPanel(
+				4,
+				"Alert Signals (15m)",
+				`sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="alert_item" [15m]))`,
+				"short",
+				18,
 				0,
+				6,
+				4,
+			),
+			timeseriesPanel(
+				5,
+				"Authentication Attack Trend",
+				"short",
+				0,
+				4,
+				12,
 				8,
+				rangeTarget("A", `sum(count_over_time({source="journald"} |~ "Failed password|Invalid user" [5m]))`, "SSH failures (5m)"),
+				rangeTarget("B", `sum(count_over_time({source="fail2ban"} |= " Ban " [5m]))`, "Fail2ban bans (5m)"),
+			),
+			timeseriesPanel(
+				6,
+				"Security Snapshot Signals",
+				"short",
 				12,
+				4,
 				12,
+				8,
+				rangeTarget("A", `last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap ssh_failures_15m [15m])`, "SSH failures (15m)"),
+				rangeTarget("B", `last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap bans_15m [15m])`, "Bans (15m)"),
+				rangeTarget("C", `last_over_time({source="resistack_snapshot",kind="security"} | json | event="security_summary" | unwrap active_bans [15m])`, "Active blocked IPs"),
 			),
 			logsPanel(
-				5,
-				"Fail2ban Log Stream",
-				`{source="fail2ban"}`,
+				7,
+				"Blocked IP Feed",
+				`{source="resistack_snapshot",kind="security"} | json | event="blocked_ip" | line_format "{{.ip}} blocked by {{.jail}}"`,
+				0,
 				12,
+				12,
+				10,
+			),
+			logsPanel(
 				8,
+				"Security Alerts",
+				`{source="resistack_snapshot",kind="security"} | json | event="alert_item" | line_format "{{.alert_type}}: {{.summary}}"`,
 				12,
 				12,
+				12,
+				10,
 			),
 		},
 	)
@@ -526,23 +685,84 @@ func buildBlockedIPsDashboard() map[string]any {
 		"resistack-blocked-ips",
 		"ResistanceStack Blocked IPs",
 		[]map[string]any{
-			logsPanel(
+			statPanel(
 				1,
-				"Current Blocked IP Snapshot",
-				`{source="resistack_snapshot",kind="security"} | json | event="blocked_ip"`,
+				"Active Blocked IPs",
+				`last_over_time({source="resistack_snapshot",kind="security"} | json | event="security_summary" | unwrap active_bans [15m])`,
+				"short",
 				0,
 				0,
+				6,
+				4,
+			),
+			statPanel(
+				2,
+				"Ban Events (15m)",
+				`sum(count_over_time({source="fail2ban"} |= " Ban " [15m]))`,
+				"short",
+				6,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				3,
+				"Unban Events (15m)",
+				`sum(count_over_time({source="fail2ban"} |= " Unban " [15m]))`,
+				"short",
 				12,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				4,
+				"SSH Alerts (15m)",
+				`sum(count_over_time({source="resistack_snapshot",kind="security"} | json | event="alert_item" | alert_type=~"ssh_bruteforce|ban_burst" [15m]))`,
+				"short",
+				18,
+				0,
+				6,
+				4,
+			),
+			timeseriesPanel(
+				5,
+				"Ban Activity",
+				"short",
+				0,
+				4,
 				12,
+				8,
+				rangeTarget("A", `sum(count_over_time({source="fail2ban"} |= " Ban " [5m]))`, "Bans (5m)"),
+				rangeTarget("B", `sum(count_over_time({source="fail2ban"} |= " Unban " [5m]))`, "Unbans (5m)"),
+			),
+			timeseriesPanel(
+				6,
+				"Blocked IP Snapshot",
+				"short",
+				12,
+				4,
+				12,
+				8,
+				rangeTarget("A", `last_over_time({source="resistack_snapshot",kind="security"} | json | event="security_summary" | unwrap active_bans [15m])`, "Active blocked IPs"),
 			),
 			logsPanel(
-				2,
-				"Alert and Ban Summary",
-				`{source="resistack_snapshot",kind="security"} | json | event=~"security_summary|alert"`,
-				12,
+				7,
+				"Current Blocked IPs",
+				`{source="resistack_snapshot",kind="security"} | json | event="blocked_ip" | line_format "{{.ip}} blocked by {{.jail}}"`,
 				0,
 				12,
 				12,
+				10,
+			),
+			logsPanel(
+				8,
+				"Recent Fail2ban Actions",
+				`{source="fail2ban"} |~ " Ban | Unban "`,
+				12,
+				12,
+				12,
+				10,
 			),
 		},
 	)
@@ -555,16 +775,93 @@ func buildWebActivityDashboard() map[string]any {
 		[]map[string]any{
 			statPanel(
 				1,
-				"Nginx Errors (15m)",
-				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap nginx_errors_15m [15m])`,
+				"Requests (15m)",
+				`sum(count_over_time({source="nginx",kind="access"} [15m]))`,
+				"short",
 				0,
 				0,
 				6,
 				4,
 			),
-			logsPanel(2, "Nginx Access", `{source="nginx",kind="access"}`, 0, 4, 12, 10),
-			logsPanel(3, "Nginx Error", `{source="nginx",kind="error"}`, 12, 4, 12, 10),
-			logsPanel(4, "Container Logs", `{source="docker"}`, 0, 14, 24, 10),
+			statPanel(
+				2,
+				"Error Responses (15m)",
+				`sum(count_over_time({source="nginx",kind="access"} |~ "\" [45][0-9]{2} " [15m]))`,
+				"short",
+				6,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				3,
+				"App Runtime Errors (15m)",
+				`sum(count_over_time({source="docker"} |~ "(?i)error|panic|exception|fatal" [15m]))`,
+				"short",
+				12,
+				0,
+				6,
+				4,
+			),
+			statPanel(
+				4,
+				"Nginx Snapshot Errors (15m)",
+				`last_over_time({source="resistack_snapshot",kind="snapshot"} | json | event="summary" | unwrap nginx_errors_15m [15m])`,
+				"short",
+				18,
+				0,
+				6,
+				4,
+			),
+			timeseriesPanel(
+				5,
+				"Traffic Shape",
+				"short",
+				0,
+				4,
+				12,
+				8,
+				rangeTarget("A", `sum(count_over_time({source="nginx",kind="access"} [5m]))`, "Requests (5m)"),
+				rangeTarget("B", `sum(count_over_time({source="nginx",kind="access"} |~ "\" 4[0-9]{2} " [5m]))`, "4xx responses (5m)"),
+				rangeTarget("C", `sum(count_over_time({source="nginx",kind="access"} |~ "\" 5[0-9]{2} " [5m]))`, "5xx responses (5m)"),
+			),
+			timeseriesPanel(
+				6,
+				"Application Error Trend",
+				"short",
+				12,
+				4,
+				12,
+				8,
+				rangeTarget("A", `sum(count_over_time({source="docker"} |~ "(?i)error|panic|exception|fatal" [5m]))`, "Container runtime errors"),
+			),
+			logsPanel(
+				7,
+				"Recent Error Responses",
+				`{source="nginx",kind="access"} |~ "\" [45][0-9]{2} " | regexp "(?P<ip>\S+) \S+ \S+ \[(?P<ts>[^\]]+)\] \"(?P<method>\S+) (?P<path>\S+) \S+\" (?P<status>\d{3})" | line_format "{{.status}} {{.method}} {{.path}} from {{.ip}}"`,
+				0,
+				12,
+				12,
+				10,
+			),
+			logsPanel(
+				8,
+				"Nginx Error Log",
+				`{source="nginx",kind="error"}`,
+				12,
+				12,
+				12,
+				10,
+			),
+			logsPanel(
+				9,
+				"Application Error Log",
+				`{source="docker"} |~ "(?i)error|panic|exception|fatal"`,
+				0,
+				22,
+				24,
+				8,
+			),
 		},
 	)
 }
@@ -594,21 +891,21 @@ func logsPanel(id int, title string, expr string, x int, y int, w int, h int) ma
 		"datasource": lokiDatasource(),
 		"gridPos":    gridPos(x, y, w, h),
 		"targets": []map[string]any{
-			queryTarget("A", expr),
+			rangeTarget("A", expr, ""),
 		},
 		"options": map[string]any{
-			"dedupStrategy":     "none",
-			"enableLogDetails":  true,
-			"prettifyLogMessage": false,
-			"showLabels":        true,
-			"showTime":          true,
-			"sortOrder":         "Descending",
-			"wrapLogMessage":    true,
+			"dedupStrategy":      "exact",
+			"enableLogDetails":   true,
+			"prettifyLogMessage": true,
+			"showLabels":         false,
+			"showTime":           true,
+			"sortOrder":          "Descending",
+			"wrapLogMessage":     true,
 		},
 	}
 }
 
-func statPanel(id int, title string, expr string, x int, y int, w int, h int) map[string]any {
+func statPanel(id int, title string, expr string, unit string, x int, y int, w int, h int) map[string]any {
 	return map[string]any{
 		"id":         id,
 		"title":      title,
@@ -616,11 +913,12 @@ func statPanel(id int, title string, expr string, x int, y int, w int, h int) ma
 		"datasource": lokiDatasource(),
 		"gridPos":    gridPos(x, y, w, h),
 		"targets": []map[string]any{
-			queryTarget("A", expr),
+			rangeTarget("A", expr, ""),
 		},
+		"fieldConfig": fieldConfig(unit),
 		"options": map[string]any{
 			"reduceOptions": map[string]any{
-				"calcs": []string{"lastNotNull"},
+				"calcs":  []string{"lastNotNull"},
 				"fields": "",
 				"values": false,
 			},
@@ -630,24 +928,49 @@ func statPanel(id int, title string, expr string, x int, y int, w int, h int) ma
 	}
 }
 
-func timeseriesPanel(id int, title string, expr string, x int, y int, w int, h int) map[string]any {
+func timeseriesPanel(id int, title string, unit string, x int, y int, w int, h int, targets ...map[string]any) map[string]any {
 	return map[string]any{
-		"id":         id,
-		"title":      title,
-		"type":       "timeseries",
-		"datasource": lokiDatasource(),
-		"gridPos":    gridPos(x, y, w, h),
-		"targets": []map[string]any{
-			queryTarget("A", expr),
+		"id":          id,
+		"title":       title,
+		"type":        "timeseries",
+		"datasource":  lokiDatasource(),
+		"gridPos":     gridPos(x, y, w, h),
+		"targets":     targets,
+		"fieldConfig": fieldConfig(unit),
+		"options": map[string]any{
+			"legend": map[string]any{
+				"displayMode": "list",
+				"placement":   "bottom",
+			},
+			"tooltip": map[string]any{
+				"mode": "multi",
+				"sort": "desc",
+			},
 		},
 	}
 }
 
-func queryTarget(refID string, expr string) map[string]any {
+func rangeTarget(refID string, expr string, legend string) map[string]any {
+	target := map[string]any{
+		"expr":       expr,
+		"editorMode": "code",
+		"queryType":  "range",
+		"refId":      refID,
+	}
+	if legend != "" {
+		target["legendFormat"] = legend
+	}
+	return target
+}
+
+func fieldConfig(unit string) map[string]any {
+	defaults := map[string]any{}
+	if unit != "" {
+		defaults["unit"] = unit
+	}
 	return map[string]any{
-		"expr":      expr,
-		"queryType": "range",
-		"refId":     refID,
+		"defaults":  defaults,
+		"overrides": []any{},
 	}
 }
 
