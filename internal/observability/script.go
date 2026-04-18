@@ -33,11 +33,11 @@ func BuildEnableScript(cfg config.Config) string {
 	fmt.Fprintf(&b, "OBS_ENV_FILE=%s\n", scriptutil.ShellQuote("/etc/default/resistack-observability"))
 	fmt.Fprintf(&b, "SNAPSHOT_INTERVAL=%s\n", scriptutil.ShellQuote(systemdInterval(cfg.Observability.SnapshotInterval)))
 	fmt.Fprintf(&b, "PANEL_HOST=%s\n", scriptutil.ShellQuote(host))
-	fmt.Fprintf(&b, "PANEL_PORT=%s\n", scriptutil.ShellQuote(port))
-	fmt.Fprintf(&b, "GRAFANA_VERSION=%s\n", scriptutil.ShellQuote(grafanaVersion))
-	fmt.Fprintf(&b, "GRAFANA_BUILD=%s\n", scriptutil.ShellQuote(grafanaBuild))
-	fmt.Fprintf(&b, "LOKI_VERSION=%s\n", scriptutil.ShellQuote(lokiVersion))
-	fmt.Fprintf(&b, "ALLOY_VERSION=%s\n", scriptutil.ShellQuote(alloyVersion))
+fmt.Fprintf(&b, "PANEL_PORT=%s\n", scriptutil.ShellQuote(port))
+fmt.Fprintf(&b, "GRAFANA_VERSION=%s\n", scriptutil.ShellQuote(grafanaVersion))
+fmt.Fprintf(&b, "GRAFANA_BUILD=%s\n", scriptutil.ShellQuote(grafanaBuild))
+fmt.Fprintf(&b, "LOKI_VERSION=%s\n", scriptutil.ShellQuote(lokiVersion))
+fmt.Fprintf(&b, "ALLOY_VERSION=%s\n", scriptutil.ShellQuote(alloyVersion))
 	b.WriteString(`
 sudo install -d -m 0755 "${DATA_DIR}" "${BIN_DIR}" "${CONFIG_DIR}" "${DOWNLOAD_DIR}" "${LOG_DIR}"
 sudo install -d -m 0755 "$(dirname "${GRAFANA_CONFIG}")" "$(dirname "${LOKI_CONFIG}")" "$(dirname "${ALLOY_CONFIG}")" "${GRAFANA_DASHBOARDS}"
@@ -56,6 +56,36 @@ download() {
   fi
   echo "[resistack] curl or wget is required to install observability binaries" >&2
   exit 1
+}
+
+resolve_grafana_url() {
+  local arch="$1"
+  local page
+  if command -v curl >/dev/null 2>&1; then
+    page="$(curl -fsSL 'https://grafana.com/grafana/download?edition=oss' 2>/dev/null || true)"
+  elif command -v wget >/dev/null 2>&1; then
+    page="$(wget -qO- 'https://grafana.com/grafana/download?edition=oss' 2>/dev/null || true)"
+  else
+    page=""
+  fi
+
+  if [ -n "${page}" ]; then
+    PAGE_CONTENT="${page}" python3 - "${arch}" <<'PY'
+import os
+import re
+import sys
+
+arch = sys.argv[1]
+page = os.environ.get("PAGE_CONTENT", "")
+pattern = re.compile(r'https://dl\.grafana\.com/grafana/release/[^"\']*grafana_[^"\']*_linux_' + re.escape(arch) + r'\.tar\.gz')
+match = pattern.search(page)
+if match:
+    print(match.group(0))
+PY
+    return
+  fi
+
+  printf 'https://dl.grafana.com/grafana/release/%s/grafana_%s_%s_linux_%s.tar.gz\n' "${GRAFANA_VERSION}" "${GRAFANA_VERSION}" "${GRAFANA_BUILD}" "${arch}"
 }
 
 ensure_system_user() {
@@ -135,6 +165,7 @@ PY
 install_grafana() {
   local archive="${DOWNLOAD_DIR}/grafana.tar.gz"
   local arch
+  local url
   case "$(uname -m)" in
     x86_64|amd64) arch="amd64" ;;
     aarch64|arm64) arch="arm64" ;;
@@ -143,7 +174,8 @@ install_grafana() {
       exit 1
       ;;
   esac
-  download "https://dl.grafana.com/grafana/release/${GRAFANA_VERSION}/grafana_${GRAFANA_VERSION}_${GRAFANA_BUILD}_linux_${arch}.tar.gz" "${archive}"
+  url="$(resolve_grafana_url "${arch}")"
+  download "${url}" "${archive}"
   python_extract_tar_tree "${archive}" "${GRAFANA_HOME}"
 }
 
