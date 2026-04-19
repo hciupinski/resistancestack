@@ -26,6 +26,7 @@ The normal flow is:
 
 ```bash
 resistack init
+resistack deploy-user bootstrap
 resistack inventory
 resistack audit
 resistack apply host-hardening
@@ -121,6 +122,16 @@ Optional brownfield hints go into:
 
 See [resistack.example.yaml](/Users/hciupinski/Repositories/cyber_article/ResistanceStack/resistack.example.yaml).
 
+Before applying SSH hardening on a fresh VPS, bootstrap the future non-root SSH user:
+
+```bash
+resistack deploy-user bootstrap
+resistack deploy-user check
+```
+
+By default, `deploy-user bootstrap` connects as `server.ssh_user`, bootstraps the preferred future SSH user from `host_hardening.ssh_hardening.allow_users`, and installs the public key that matches `server.private_key_path`.
+If you still connect as `root`, keep `server.ssh_user: root`, declare the future user in `allow_users`, run the bootstrap command, then switch `server.ssh_user` to that named account after verification.
+
 ### 3. Detect Current State
 
 ```bash
@@ -147,6 +158,7 @@ Reports are written to `reporting.output_path`.
 
 If the configured `server.ssh_user` does not have passwordless sudo, the audit will report it explicitly and show the exact `sudoers` command to run before host hardening.
 If `host_hardening.ssl_certificates.enabled=true`, the audit also checks only the first entry in `app_inventory.domains` and expects a valid local certificate for that primary domain.
+If SSH hardening would disable the configured login path or references missing `allow_users`, the audit reports that before you run `apply`.
 
 ### 5. Apply Only What You Want
 
@@ -166,7 +178,11 @@ resistack apply host-hardening --dry-run
 ```
 
 If `host-hardening` detects that the configured SSH user does not have passwordless sudo, it stops immediately and prints the exact commands needed to grant it.
+If `host-hardening` would leave no verified SSH login path after applying `AllowUsers`, `PermitRootLogin`, and key-only auth, it refuses the change before touching `sshd_config`.
 If `host_hardening.ssl_certificates.auto_issue=true`, `host-hardening` first validates Certbot's local lineage inventory with `certbot certificates` and refuses to auto-issue when the managed lineage naming or `/etc/letsencrypt` layout is inconsistent. It only runs `certbot certonly --standalone` when no broken local Certbot state is detected, and fails the run if issuance or post-issue validation does not succeed.
+
+Before disabling root login from a root-managed server, bootstrap a named SSH user with `authorized_keys`, add it to `host_hardening.ssh_hardening.allow_users`, and plan to switch `server.ssh_user` to that account after hardening. `guard_current_operator` only keeps `server.ssh_user` inside a managed `AllowUsers` list; it does not override `disable_root_login`.
+Use `resistack deploy-user check` before hardening if you want an explicit readiness check for that SSH account.
 
 ### 6. Generate Security Workflows
 
@@ -230,6 +246,8 @@ Host hardening stores backups of modified system files and can restore the lates
 
 ```bash
 resistack init
+resistack deploy-user check
+resistack deploy-user bootstrap
 resistack inventory
 resistack audit
 resistack apply [modules...] [--dry-run]
@@ -269,6 +287,7 @@ Important examples:
 - `host_hardening.ufw_policy`: default firewall policy, operator access mode, current-session preservation, and optional admin allowlist
 - `host_hardening.fail2ban`: ban windows and retry thresholds
 - `host_hardening.ssl_certificates`: managed local TLS checks and optional Let's Encrypt auto-issue for `app_inventory.domains[0]`
+- `deploy-user` command: idempotent SSH user bootstrap and readiness verification
 - `observability.panel_bind`: local bind for the Grafana observability view
 - `observability.snapshot_interval`: cadence for Resistack snapshot generation
 - `observability.retention_days`: local Loki retention window in days

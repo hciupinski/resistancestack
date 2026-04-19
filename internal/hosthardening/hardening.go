@@ -11,10 +11,7 @@ import (
 )
 
 func BuildApplyScript(cfg config.Config) string {
-	allowUsers := ""
-	if len(cfg.HostHardening.SSHHardening.AllowUsers) > 0 {
-		allowUsers = strings.Join(cfg.HostHardening.SSHHardening.AllowUsers, " ")
-	}
+	allowUsers := strings.Join(config.ManagedSSHAllowUsers(cfg), " ")
 	primaryDomain := cfg.PrimaryDomain()
 
 	ufwTCPRules := strings.Builder{}
@@ -81,7 +78,10 @@ set -euo pipefail
 
 BACKUP_ROOT=%s
 SSH_PORT=%d
+PRIMARY_SSH_USER=%s
 ALLOW_USERS=%s
+DISABLE_ROOT_LOGIN=%s
+DISABLE_PASSWORD_AUTH=%s
 REQUIRE_PASSWORDLESS_SUDO=%s
 STATIC_ADMIN_ALLOWLIST=%s
 OPERATOR_ACCESS_MODE=%s
@@ -164,6 +164,77 @@ append_csv() {
     return 0
   fi
   printf '%%s,%%s' "${current}" "${item}"
+}
+
+getent_field() {
+  local user="$1"
+  local field="$2"
+  getent passwd "${user}" | cut -d: -f"${field}"
+}
+
+has_interactive_shell() {
+  local user="$1"
+  local shell_path
+  shell_path="$(getent_field "${user}" 7 || true)"
+  [ -n "${shell_path}" ] || return 1
+  case "${shell_path}" in
+    */nologin|*/false)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
+has_authorized_keys() {
+  local user="$1"
+  local home_dir
+  home_dir="$(getent_field "${user}" 6 || true)"
+  [ -n "${home_dir}" ] || return 1
+  sudo test -s "${home_dir}/.ssh/authorized_keys"
+}
+
+require_ssh_login_candidate() {
+  local user="$1"
+  if ! getent passwd "${user}" >/dev/null 2>&1; then
+    echo "[resistack] refusing to change SSH access controls: user ${user} does not exist" >&2
+    exit 1
+  fi
+  if ! has_interactive_shell "${user}"; then
+    echo "[resistack] refusing to change SSH access controls: user ${user} has a non-interactive shell" >&2
+    exit 1
+  fi
+  if [ "${DISABLE_PASSWORD_AUTH}" = "true" ] && ! has_authorized_keys "${user}"; then
+    echo "[resistack] refusing to change SSH access controls: user ${user} has no authorized_keys for key-only login" >&2
+    exit 1
+  fi
+}
+
+verify_future_ssh_access() {
+  local user
+  local usable_candidates=0
+
+  if [ -n "${ALLOW_USERS}" ]; then
+    for user in ${ALLOW_USERS}; do
+      if [ "${DISABLE_ROOT_LOGIN}" = "true" ] && [ "${user}" = "root" ]; then
+        continue
+      fi
+      require_ssh_login_candidate "${user}"
+      usable_candidates=$((usable_candidates + 1))
+    done
+    if [ "${usable_candidates}" -eq 0 ]; then
+      echo "[resistack] refusing to change SSH access controls: AllowUsers would leave no usable non-root SSH login after root is disabled" >&2
+      exit 1
+    fi
+    return 0
+  fi
+
+  if [ "${DISABLE_ROOT_LOGIN}" = "true" ] && [ "${PRIMARY_SSH_USER}" = "root" ]; then
+    echo "[resistack] refusing to disable root login without an explicit non-root allow_users entry" >&2
+    echo "[resistack] bootstrap a named sudo user with authorized_keys, then add it to host_hardening.ssh_hardening.allow_users" >&2
+    exit 1
+  fi
+
+  require_ssh_login_candidate "${PRIMARY_SSH_USER}"
 }
 
 cleanup_bootstrap_rules() {
@@ -552,6 +623,8 @@ if [ "${REQUIRE_PASSWORDLESS_SUDO}" = "true" ]; then
   require_privileged_access
 fi
 
+verify_future_ssh_access
+
 if command -v apt-get >/dev/null 2>&1; then
   sudo apt-get update -y
   sudo apt-get install -y %s
@@ -675,14 +748,17 @@ restart_ssh_service
 %s
 
 if %t; then
-  id %s >/dev/null 2>&1 || { echo "deploy user %s not found" >&2; exit 1; }
+  require_ssh_login_candidate %s
 fi
 sudo -n -l >/dev/null
 
 echo "[resistack] host hardening applied"
 `, scriptutil.ShellQuote(cfg.HostHardening.BackupDir),
 		cfg.Server.SSHPort,
+		scriptutil.ShellQuote(cfg.Server.SSHUser),
 		scriptutil.ShellQuote(allowUsers),
+		scriptutil.ShellQuote(boolString(cfg.HostHardening.SSHHardening.DisableRootLogin)),
+		scriptutil.ShellQuote(boolString(cfg.HostHardening.SSHHardening.DisablePasswordAuth)),
 		scriptutil.ShellQuote(passwordlessCheck),
 		scriptutil.ShellQuote(strings.Join(sanitizeAllowlist(cfg.HostHardening.UFWPolicy.AdminAllowlist), ",")),
 		scriptutil.ShellQuote(operatorAccessMode),
@@ -715,7 +791,6 @@ echo "[resistack] host hardening applied"
 		automaticUpdates,
 		dockerCheck,
 		cfg.HostHardening.CheckDeployUser,
-		scriptutil.ShellQuote(cfg.Server.SSHUser),
 		scriptutil.ShellQuote(cfg.Server.SSHUser))
 }
 

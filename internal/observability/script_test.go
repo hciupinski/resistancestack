@@ -25,6 +25,8 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 		`http://${PANEL_HOST}:${PANEL_PORT}/`,
 		"resistack-live-logs",
 		`loki.source.journal "systemd"`,
+		`action = "labeldrop"`,
+		`regex  = "filename"`,
 		`python_extract_zip_binary "${archive}" "loki-linux-${arch},loki"`,
 		`python_extract_zip_binary "${archive}" "alloy,alloy-linux-${arch},alloy-boringcrypto-linux-${arch}"`,
 		`header.startswith(b"\x7fELF")`,
