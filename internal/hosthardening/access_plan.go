@@ -12,10 +12,13 @@ import (
 
 type AccessPlan struct {
 	Mode                   string
+	CurrentOperatorUser    string
 	CurrentOperatorIP      string
 	PreserveCurrentSession bool
 	StaticAllowlist        []string
 	EffectiveAllowlist     []string
+	ManagedAllowUsers      []string
+	FutureSSHUsers         []string
 	BootstrapCIDR          string
 	OpenSSHGlobally        bool
 	BlockingReason         string
@@ -57,9 +60,12 @@ func BuildAccessPlan(cfg config.Config, currentOperatorIP string) AccessPlan {
 
 	plan := AccessPlan{
 		Mode:                   mode,
+		CurrentOperatorUser:    strings.TrimSpace(cfg.Server.SSHUser),
 		CurrentOperatorIP:      strings.TrimSpace(currentOperatorIP),
 		PreserveCurrentSession: cfg.HostHardening.UFWPolicy.PreserveCurrentSession,
 		StaticAllowlist:        sanitizeAllowlist(cfg.HostHardening.UFWPolicy.AdminAllowlist),
+		ManagedAllowUsers:      config.ManagedSSHAllowUsers(cfg),
+		FutureSSHUsers:         config.FutureSSHLoginUsers(cfg),
 	}
 	plan.EffectiveAllowlist = append([]string{}, plan.StaticAllowlist...)
 
@@ -105,6 +111,9 @@ func BuildAccessPlan(cfg config.Config, currentOperatorIP string) AccessPlan {
 	if mode == config.OperatorAccessModeAllowlistOnly {
 		plan.FinalRuleModel = "allowlist-only " + plan.FinalRuleModel
 	}
+	if plan.CurrentOperatorUser == "root" && cfg.HostHardening.SSHHardening.DisableRootLogin && len(plan.FutureSSHUsers) == 0 {
+		plan.BlockingReason = appendBlockingReason(plan.BlockingReason, "disabling root login requires an explicit non-root SSH user")
+	}
 
 	return plan
 }
@@ -113,6 +122,11 @@ func FormatAccessPlan(plan AccessPlan) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Host hardening access preview:\n")
 	fmt.Fprintf(&b, "- operator access mode: %s\n", plan.Mode)
+	if plan.CurrentOperatorUser == "" {
+		fmt.Fprintf(&b, "- configured SSH user: unavailable\n")
+	} else {
+		fmt.Fprintf(&b, "- configured SSH user: %s\n", plan.CurrentOperatorUser)
+	}
 	if plan.CurrentOperatorIP == "" {
 		fmt.Fprintf(&b, "- current source IP: unavailable\n")
 	} else {
@@ -129,9 +143,32 @@ func FormatAccessPlan(plan AccessPlan) string {
 	} else {
 		fmt.Fprintf(&b, "- bootstrap current session: yes (%s)\n", plan.BootstrapCIDR)
 	}
+	if len(plan.ManagedAllowUsers) == 0 {
+		fmt.Fprintf(&b, "- managed AllowUsers: none\n")
+	} else {
+		fmt.Fprintf(&b, "- managed AllowUsers: %s\n", strings.Join(plan.ManagedAllowUsers, ", "))
+	}
+	if len(plan.FutureSSHUsers) == 0 {
+		fmt.Fprintf(&b, "- future SSH login users: none declared\n")
+	} else {
+		fmt.Fprintf(&b, "- future SSH login users: %s\n", strings.Join(plan.FutureSSHUsers, ", "))
+	}
 	fmt.Fprintf(&b, "- final SSH rule model: %s\n", plan.FinalRuleModel)
 	if plan.BlockingReason != "" {
 		fmt.Fprintf(&b, "- apply would fail: %s\n", plan.BlockingReason)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func appendBlockingReason(current string, reason string) string {
+	current = strings.TrimSpace(current)
+	reason = strings.TrimSpace(reason)
+	switch {
+	case current == "":
+		return reason
+	case reason == "":
+		return current
+	default:
+		return current + "; " + reason
+	}
 }

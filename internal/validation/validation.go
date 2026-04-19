@@ -56,11 +56,26 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 	if !cfg.HostHardening.Enabled {
 		warnings = append(warnings, "host_hardening.enabled=false; baseline hardening will not be applied")
 	}
+	managedSSHUsers := config.ManagedSSHAllowUsers(cfg)
+	futureSSHUsers := config.FutureSSHLoginUsers(cfg)
 	if cfg.HostHardening.SSHHardening.MaxAuthTries <= 0 {
 		errs = append(errs, fmt.Errorf("host_hardening.ssh_hardening.max_auth_tries must be > 0"))
 	}
 	if cfg.HostHardening.SSHHardening.LoginGraceTimeSeconds <= 0 {
 		errs = append(errs, fmt.Errorf("host_hardening.ssh_hardening.login_grace_time_seconds must be > 0"))
+	}
+	if len(managedSSHUsers) > 0 && len(futureSSHUsers) == 0 {
+		errs = append(errs, fmt.Errorf("host_hardening.ssh_hardening.allow_users must include at least one non-root SSH user when disable_root_login=true"))
+	}
+	if len(managedSSHUsers) > 0 && !containsString(managedSSHUsers, cfg.Server.SSHUser) {
+		warnings = append(warnings, "host_hardening.ssh_hardening.allow_users excludes server.ssh_user; future Resistack runs will fail unless you update server.ssh_user after hardening")
+	}
+	if cfg.Server.SSHUser == "root" && cfg.HostHardening.SSHHardening.DisableRootLogin {
+		if len(futureSSHUsers) == 0 {
+			warnings = append(warnings, "server.ssh_user=root with disable_root_login=true but no explicit non-root SSH user is configured; host-hardening will refuse to apply until allow_users includes a bootstrapped non-root account")
+		} else {
+			warnings = append(warnings, "server.ssh_user=root with disable_root_login=true; update server.ssh_user to one of the future SSH users after hardening")
+		}
 	}
 	if cfg.HostHardening.UFWPolicy.Enabled {
 		switch strings.ToLower(strings.TrimSpace(cfg.HostHardening.UFWPolicy.DefaultIncoming)) {

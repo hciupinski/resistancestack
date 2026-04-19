@@ -17,7 +17,7 @@ var defaultLineComments = map[string]string{
 	"host_hardening.ssh_hardening.allow_users[]":             "User explicitly allowed to log in via SSH.",
 	"host_hardening.ssh_hardening.max_auth_tries":            "Maximum SSH authentication attempts per connection.",
 	"host_hardening.ssh_hardening.login_grace_time_seconds":  "Seconds allowed to complete SSH login before disconnect.",
-	"host_hardening.ssh_hardening.guard_current_operator":    "Protect the active operator session during hardening.",
+	"host_hardening.ssh_hardening.guard_current_operator":    "When AllowUsers is managed, keep server.ssh_user in the final SSH allow list during hardening.",
 	"host_hardening.ssh_hardening.require_passwordless_sudo": "Require non-interactive sudo for host changes.",
 	"host_hardening.ufw_policy.enabled":                      "Enable UFW baseline firewall rules.",
 	"host_hardening.ufw_policy.default_incoming":             "Default inbound firewall policy. Options: allow, deny, reject.",

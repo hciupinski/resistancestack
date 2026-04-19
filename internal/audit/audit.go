@@ -21,6 +21,9 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 		findings = append(findings, f)
 	}
 
+	managedSSHUsers := config.ManagedSSHAllowUsers(cfg)
+	futureSSHUsers := config.FutureSSHLoginUsers(cfg)
+
 	if !snapshot.UFW.Enabled {
 		add(Finding{
 			ID:             "host.ufw.disabled",
@@ -68,6 +71,64 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			Recommendation: "Apply SSH hardening and verify that privileged access flows through named sudo users.",
 			AutoRemediable: true,
 		})
+	}
+	if cfg.Server.SSHUser != "" && !slices.Contains(futureSSHUsers, cfg.Server.SSHUser) {
+		add(Finding{
+			ID:             "host.ssh.configured-user-cutoff",
+			Module:         "host-hardening",
+			Severity:       config.SeverityMedium,
+			Description:    "The configured server.ssh_user will not remain usable after SSH hardening.",
+			DetectedValue:  cfg.Server.SSHUser,
+			Risk:           "Future Resistack runs can fail after hardening because the configured SSH identity will be excluded or disabled.",
+			Recommendation: "Update `server.ssh_user` to a verified future SSH user before or immediately after host hardening.",
+			AutoRemediable: false,
+		})
+	}
+	if cfg.Server.SSHUser == "root" && cfg.HostHardening.SSHHardening.DisableRootLogin && len(futureSSHUsers) == 0 {
+		add(Finding{
+			ID:             "host.ssh.root-cutoff-without-replacement",
+			Module:         "host-hardening",
+			Severity:       config.SeverityHigh,
+			Description:    "Root login is configured to be disabled without an explicit non-root SSH replacement.",
+			DetectedValue:  "root",
+			Risk:           "Applying SSH hardening from a root session can remove the only declared login path.",
+			Recommendation: "Bootstrap a named SSH user with authorized_keys, add it to `host_hardening.ssh_hardening.allow_users`, and switch `server.ssh_user` to that account.",
+			AutoRemediable: false,
+		})
+	}
+	if len(managedSSHUsers) > 0 {
+		missingManagedSSHUsers := []string{}
+		presentFutureSSHUsers := 0
+		for _, user := range managedSSHUsers {
+			if cfg.HostHardening.SSHHardening.DisableRootLogin && user == "root" {
+				continue
+			}
+			if slices.Contains(snapshot.SSHUsers, user) {
+				presentFutureSSHUsers++
+				continue
+			}
+			missingManagedSSHUsers = append(missingManagedSSHUsers, user)
+		}
+		if len(missingManagedSSHUsers) > 0 {
+			severity := config.SeverityMedium
+			risk := "The managed AllowUsers policy references accounts that were not detected as interactive SSH users."
+			recommendation := "Verify these accounts exist, have a real login shell, and have authorized_keys before host hardening."
+			if presentFutureSSHUsers == 0 {
+				severity = config.SeverityHigh
+				risk = "Applying the managed AllowUsers policy can remove every declared non-root SSH path."
+				recommendation = "Create and verify at least one non-root SSH user in `host_hardening.ssh_hardening.allow_users` before host hardening."
+			}
+			add(Finding{
+				ID:             "host.ssh.allow-users-missing",
+				Module:         "host-hardening",
+				Severity:       severity,
+				Description:    "Some managed AllowUsers accounts were not detected on the host.",
+				DetectedValue:  strings.Join(missingManagedSSHUsers, ", "),
+				Risk:           risk,
+				Recommendation: recommendation,
+				AutoRemediable: false,
+			})
+		}
 	}
 	if hasPublicPort(snapshot.ExposedPorts, 2375) {
 		add(Finding{

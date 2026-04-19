@@ -14,6 +14,9 @@ func TestBuildApplyScript_ContainsGuardrailsAndBackups(t *testing.T) {
 	for _, expected := range []string{
 		"require_privileged_access",
 		"passwordless sudo is required for host hardening",
+		"verify_future_ssh_access",
+		"require_ssh_login_candidate",
+		"refusing to disable root login without an explicit non-root allow_users entry",
 		"parse_current_operator_ip",
 		"cleanup_bootstrap_rules",
 		"resistack-bootstrap",
@@ -60,6 +63,18 @@ func TestBuildApplyScript_RestartsSSHWithFallbacks(t *testing.T) {
 	}
 	if strings.Contains(script, "if systemctl list-unit-files | grep -q '^ssh.service'; then") {
 		t.Fatal("expected brittle SSH unit detection to be removed")
+	}
+}
+
+func TestBuildApplyScript_GuardsManagedAllowUsersWithCurrentOperator(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Server.SSHUser = "root"
+	cfg.HostHardening.SSHHardening.AllowUsers = []string{"deployer"}
+
+	script := BuildApplyScript(cfg)
+
+	if !strings.Contains(script, "ALLOW_USERS='deployer root'") {
+		t.Fatal("expected guarded AllowUsers list to preserve current operator")
 	}
 }
 

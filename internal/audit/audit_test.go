@@ -188,3 +188,58 @@ func TestEvaluate_DisabledManagedSSLSkipsPrimaryDomainFinding(t *testing.T) {
 		}
 	}
 }
+
+func TestEvaluate_FindsRootCutoffWithoutReplacement(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Server.SSHUser = "root"
+	cfg.HostHardening.SSHHardening.AllowUsers = nil
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		SSHUsers:         []string{"root"},
+		UFW:              inventory.ServiceState{Enabled: true, Status: "active"},
+		Fail2ban:         inventory.ServiceState{Enabled: true, Status: "active"},
+		PasswordlessSudo: true,
+		Observability:    inventory.ObservabilityInfo{Enabled: true, Status: "active"},
+		TLSCertificates:  []inventory.TLSCertificate{{Path: "/etc/letsencrypt/live/app.example.com/fullchain.pem", Names: []string{"app.example.com"}, Valid: true}},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "host.ssh.root-cutoff-without-replacement" {
+			found = true
+			if finding.Severity != config.SeverityHigh {
+				t.Fatalf("expected high severity, got %s", finding.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected root cutoff finding")
+	}
+}
+
+func TestEvaluate_FindsMissingManagedAllowUsers(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.HostHardening.SSHHardening.AllowUsers = []string{"deployer", "missing-user"}
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		SSHUsers:         []string{"deployer"},
+		UFW:              inventory.ServiceState{Enabled: true, Status: "active"},
+		Fail2ban:         inventory.ServiceState{Enabled: true, Status: "active"},
+		PasswordlessSudo: true,
+		Observability:    inventory.ObservabilityInfo{Enabled: true, Status: "active"},
+		TLSCertificates:  []inventory.TLSCertificate{{Path: "/etc/letsencrypt/live/app.example.com/fullchain.pem", Names: []string{"app.example.com"}, Valid: true}},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "host.ssh.allow-users-missing" {
+			found = true
+			if finding.Severity != config.SeverityMedium {
+				t.Fatalf("expected medium severity, got %s", finding.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected missing allow_users finding")
+	}
+}

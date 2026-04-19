@@ -25,6 +25,8 @@ func Run(args []string, out io.Writer, errOut io.Writer) error {
 		return runApply(args[1:], out, errOut)
 	case "status":
 		return runStatus(args[1:], out, errOut)
+	case "deploy-user":
+		return runDeployUser(args[1:], out, errOut)
 	case "ci":
 		return runCI(args[1:], out, errOut)
 	case "observability":
@@ -52,6 +54,7 @@ func printUsage(out io.Writer) {
 	fmt.Fprintln(out, "  audit [--dry-run]                   Generate risk report and remediation plan")
 	fmt.Fprintln(out, "  apply [modules...] [--dry-run]      Apply selected security modules")
 	fmt.Fprintln(out, "  status                              Show host, observability, and security posture")
+	fmt.Fprintln(out, "  deploy-user check|bootstrap         Verify or bootstrap the future SSH deploy user")
 	fmt.Fprintln(out, "  ci generate                         Generate standalone security workflows")
 	fmt.Fprintln(out, "  ci validate                         Validate generated security workflows")
 	fmt.Fprintln(out, "  observability enable [--dry-run]    Enable local observability baseline")

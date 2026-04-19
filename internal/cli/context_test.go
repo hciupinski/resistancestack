@@ -41,6 +41,16 @@ func TestConfigBackedCommandsAcceptEnvFlag(t *testing.T) {
 			args: []string{"--config", configPath, "--env", "prod"},
 		},
 		{
+			name: "deploy-user check",
+			run:  runDeployUser,
+			args: []string{"check", "--config", configPath, "--env", "prod"},
+		},
+		{
+			name: "deploy-user bootstrap",
+			run:  runDeployUser,
+			args: []string{"bootstrap", "--config", configPath, "--env", "prod", "--dry-run"},
+		},
+		{
 			name: "ci generate",
 			run:  runCI,
 			args: []string{"generate", "--config", configPath, "--env", "prod"},

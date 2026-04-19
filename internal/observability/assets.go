@@ -334,21 +334,31 @@ loki.source.docker "containers" {
 }
 
 func buildFileSourceBlock(label string, logPath string, source string, service string, kind string) string {
-	return fmt.Sprintf(`loki.source.file %q {
+	relabelLabel := label + "_labels"
+	return fmt.Sprintf(`loki.relabel %q {
+  forward_to = [loki.write.local.receiver]
+
+  rule {
+    action = "labeldrop"
+    regex  = "filename"
+  }
+}
+
+loki.source.file %q {
   targets = [{
     __path__ = %q,
     source   = %q,
     service  = %q,
     kind     = %q,
   }]
-  forward_to = [loki.write.local.receiver]
+  forward_to = [loki.relabel.%s.receiver]
 
   file_match {
     enabled     = true
     sync_period = "30s"
   }
 }
-`, label, logPath, source, service, kind)
+`, relabelLabel, label, logPath, source, service, kind, relabelLabel)
 }
 
 func buildDatasourcesProvisioning() string {

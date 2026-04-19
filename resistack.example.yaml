@@ -1,116 +1,116 @@
 # Shared base config. Add environment-specific overrides in sibling files such as
 # resistack.dev.yaml and resistack.prod.yaml, and keep only differing values there.
-project_name: "myapp"
+project_name: "myapp" # Project name used in reports and generated assets.
 mode:
-  strategy: "audit_then_apply"
+  strategy: "audit_then_apply" # Workflow mode used by Resistack.
 
 server:
-  host: "1.2.3.4"
-  ssh_user: "deployer"
-  ssh_port: 22
-  private_key_path: "~/.ssh/id_ed25519"
-  host_key_checking: "strict"
-  known_hosts_path: "~/.ssh/known_hosts"
+  host: "1.2.3.4" # Target VPS hostname or IP.
+  ssh_user: "deployer" # SSH user Resistack connects as.
+  ssh_port: 22 # SSH port on the target host.
+  private_key_path: "~/.ssh/id_ed25519" # Private key used for SSH auth.
+  host_key_checking: "strict" # SSH host key policy.
+  known_hosts_path: "~/.ssh/known_hosts" # Known hosts file for strict checking.
 
 host_hardening:
-  enabled: true
+  enabled: true # Enable baseline host hardening.
   ssh_hardening:
-    disable_root_login: true
-    disable_password_auth: true
+    disable_root_login: true # Disable direct root SSH login.
+    disable_password_auth: true # Require SSH keys instead of passwords.
     allow_users:
-      - "deployer"
-    max_auth_tries: 4
-    login_grace_time_seconds: 30
-    guard_current_operator: true
-    require_passwordless_sudo: true
+      - "deployer" # SSH user explicitly allowed after hardening.
+    max_auth_tries: 4 # Max SSH auth attempts per connection.
+    login_grace_time_seconds: 30 # Seconds allowed to finish SSH login.
+    guard_current_operator: true # Keep server.ssh_user in managed AllowUsers.
+    require_passwordless_sudo: true # Require non-interactive sudo for changes.
   ufw_policy:
-    enabled: true
-    default_incoming: "deny"
-    default_outgoing: "allow"
-    operator_access_mode: "public_hardened"
-    preserve_current_session: true
+    enabled: true # Enable the UFW firewall baseline.
+    default_incoming: "deny" # Default inbound firewall policy.
+    default_outgoing: "allow" # Default outbound firewall policy.
+    operator_access_mode: "public_hardened" # SSH exposure model for operators.
+    preserve_current_session: true # Temporarily preserve the active SSH session.
     allowed_tcp_ports:
-      - 22
-      - 80
-      - 443
-    admin_allowlist: []
+      - 22 # SSH port kept reachable.
+      - 80 # HTTP port kept reachable.
+      - 443 # HTTPS port kept reachable.
+    admin_allowlist: [] # Optional SSH source CIDR allowlist.
   fail2ban:
-    enabled: true
-    ban_time: "1h"
-    find_time: "10m"
-    max_retry: 5
-    recidive_enabled: true
-    recidive_ban_time: "24h"
+    enabled: true # Enable fail2ban protection.
+    ban_time: "1h" # Ban duration after repeated failures.
+    find_time: "10m" # Window used to count failures.
+    max_retry: 5 # Failed attempts allowed before ban.
+    recidive_enabled: true # Enable longer repeat-offender bans.
+    recidive_ban_time: "24h" # Ban duration for repeat offenders.
   ssl_certificates:
-    enabled: true
-    auto_issue: false
-    email: "security@example.com"
-    staging: false
-  automatic_security_updates: true
-  check_deploy_user: true
-  check_docker_daemon: true
-  backup_dir: "/var/lib/resistack/backups/host"
+    enabled: true # Manage local TLS certificate checks.
+    auto_issue: false # Auto-issue Let's Encrypt certs when needed.
+    email: "security@example.com" # Email used for Let's Encrypt.
+    staging: false # Use Let's Encrypt staging instead of production.
+  automatic_security_updates: true # Enable unattended security updates.
+  check_deploy_user: true # Verify the configured SSH user exists and is usable.
+  check_docker_daemon: true # Inspect Docker for risky daemon settings.
+  backup_dir: "/var/lib/resistack/backups/host" # Backup directory for rollback.
 
 app_inventory:
   compose_paths:
-    - "docker-compose.yml"
-    - "docker-compose.prod.yml"
+    - "docker-compose.yml" # Compose path hint for repo and host detection.
+    - "docker-compose.prod.yml" # Additional Compose path hint.
   nginx_paths:
-    - "/etc/nginx/sites-enabled"
-    - "/etc/nginx/conf.d"
+    - "/etc/nginx/sites-enabled" # Nginx config path hint.
+    - "/etc/nginx/conf.d" # Additional Nginx config path hint.
   systemd_units:
-    - "nginx"
-    - "docker"
-    - "fail2ban"
+    - "nginx" # Systemd unit hint for inventory.
+    - "docker" # Additional systemd unit hint.
+    - "fail2ban" # Security service unit hint.
   domains:
-    - "app.example.com"
+    - "app.example.com" # Primary application domain.
   healthcheck_urls:
-    - "http://127.0.0.1:8080/health"
+    - "http://127.0.0.1:8080/health" # Health endpoint used for checks.
 
 observability:
-  enable: true
+  enable: true # Enable local observability baseline.
   log_sources:
-    - "journald"
-    - "nginx"
-    - "docker"
-    - "fail2ban"
-  host_metrics: true
-  panel_bind: "127.0.0.1:9400"
-  local_data_dir: "/var/lib/resistack/observability"
-  snapshot_interval: "1m"
-  retention_days: 7
+    - "journald" # Collect system journal logs.
+    - "nginx" # Collect Nginx logs.
+    - "docker" # Collect Docker logs.
+    - "fail2ban" # Collect fail2ban logs.
+  host_metrics: true # Collect host-level runtime metrics.
+  panel_bind: "127.0.0.1:9400" # Bind address for the local Grafana UI.
+  local_data_dir: "/var/lib/resistack/observability" # Storage path for observability data.
+  snapshot_interval: "1m" # Interval between local snapshots.
+  retention_days: 7 # Log retention window in days.
 
 ci:
-  provider: "github_actions"
-  generate_workflows: true
-  mode: "warn-only"
-  schedule: "24 3 * * *"
+  provider: "github_actions" # CI system used for generated workflows.
+  generate_workflows: true # Generate security workflows in the repo.
+  mode: "warn-only" # Enforcement mode for generated checks.
+  schedule: "24 3 * * *" # Cron schedule for recurring scans.
   github:
-    repository_visibility: "unknown"
-    code_scanning_enabled: false
-    sarif_upload_mode: "auto"
+    repository_visibility: "unknown" # Repo visibility hint for GitHub features.
+    code_scanning_enabled: false # Whether GitHub code scanning is already on.
+    sarif_upload_mode: "auto" # How SARIF upload is configured.
   scans:
-    dependency: true
-    image: true
-    sbom: true
-    secrets: true
-    license: true
-    osv: true
+    dependency: true # Enable dependency scanning workflow.
+    image: true # Enable container image scanning workflow.
+    sbom: true # Enable SBOM generation workflow.
+    secrets: true # Enable secret scanning workflow.
+    license: true # Enable license inventory checks.
+    osv: true # Enable OSV vulnerability scanning.
 
 reporting:
-  output_path: "./.resistack/reports"
-  format: "text"
-  minimum_severity: "low"
+  output_path: "./.resistack/reports" # Directory for generated reports.
+  format: "text" # Report output format.
+  minimum_severity: "low" # Lowest severity included in reports.
 
 alerts:
-  enabled: true
-  webhook_url: "https://hooks.example.com/security"
-  email: "security@example.com"
-  slack_url: "https://hooks.slack.com/services/T000/B000/XXX"
+  enabled: true # Enable alert generation from observability data.
+  webhook_url: "https://hooks.example.com/security" # Generic webhook target.
+  email: "security@example.com" # Email target used for alerts.
+  slack_url: "https://hooks.slack.com/services/T000/B000/XXX" # Slack webhook target.
   thresholds:
-    ssh_failures_15m: 25
-    bans_15m: 10
-    nginx_errors_15m: 30
-    container_restarts: 3
-    disk_percent_used: 85
-    cert_expiry_days: 21
+    ssh_failures_15m: 25 # SSH failures in 15 minutes before alerting.
+    bans_15m: 10 # fail2ban bans in 15 minutes before alerting.
+    nginx_errors_15m: 30 # Nginx errors in 15 minutes before alerting.
+    container_restarts: 3 # Container restarts before alerting.
+    disk_percent_used: 85 # Disk usage percent before alerting.
+    cert_expiry_days: 21 # Days before cert expiry to alert.

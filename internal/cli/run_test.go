@@ -63,3 +63,13 @@ func TestRun_ObservabilityRequiresSubcommand(t *testing.T) {
 		t.Fatalf("unexpected error %q", got)
 	}
 }
+
+func TestRun_DeployUserRequiresSubcommand(t *testing.T) {
+	err := Run([]string{"deploy-user"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected missing deploy-user subcommand error")
+	}
+	if got := err.Error(); got != "deploy-user requires a subcommand: check or bootstrap" {
+		t.Fatalf("unexpected error %q", got)
+	}
+}

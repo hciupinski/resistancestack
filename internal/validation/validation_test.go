@@ -105,6 +105,37 @@ func TestCheck_PublicHardenedWithoutAllowlistWarns(t *testing.T) {
 	}
 }
 
+func TestCheck_RootDisableWithoutReplacementWarns(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Server.SSHUser = "root"
+	cfg.HostHardening.SSHHardening.AllowUsers = nil
+
+	warnings, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	found := false
+	for _, warning := range warnings {
+		if warning == "server.ssh_user=root with disable_root_login=true but no explicit non-root SSH user is configured; host-hardening will refuse to apply until allow_users includes a bootstrapped non-root account" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected root replacement warning")
+	}
+}
+
+func TestCheck_AllowUsersMustContainFutureNonRootUser(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Server.SSHUser = "root"
+	cfg.HostHardening.SSHHardening.AllowUsers = []string{"root"}
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
 func TestCheck_InvalidSARIFUploadModeReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.CI.GitHub.SARIFUploadMode = "sometimes"
