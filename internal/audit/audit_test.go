@@ -29,6 +29,50 @@ func TestEvaluate_FindsHostAndCIRisks(t *testing.T) {
 	}
 }
 
+func TestEvaluate_LocalSnapshotReportsNotCheckedInsteadOfHostFindings(t *testing.T) {
+	cfg := config.Default("demo")
+	snapshot := inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo:          inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host:          inventory.AreaStatus{Status: inventory.AreaStatusNotChecked, Reason: "local mode"},
+			CloudExternal: inventory.AreaStatus{Status: inventory.AreaStatusNotChecked, Reason: "local mode"},
+		},
+		Repo: inventory.RepoInfo{
+			GitHubWorkflows: []string{".github/workflows/deploy.yml"},
+		},
+	}
+
+	report := Evaluate(cfg, snapshot)
+
+	foundHostNotChecked := false
+	foundCloudNotChecked := false
+	for _, finding := range report.Findings {
+		switch finding.ID {
+		case "host.not_checked":
+			foundHostNotChecked = true
+			if finding.Severity != config.SeverityNotChecked {
+				t.Fatalf("expected host not_checked severity, got %s", finding.Severity)
+			}
+		case "cloud_external.not_checked":
+			foundCloudNotChecked = true
+			if finding.Severity != config.SeverityNotChecked {
+				t.Fatalf("expected cloud not_checked severity, got %s", finding.Severity)
+			}
+		case "host.ufw.disabled", "host.fail2ban.inactive", "host.sudo.passwordless-missing":
+			t.Fatalf("expected local snapshot not to emit remote host finding %q", finding.ID)
+		}
+	}
+	if !foundHostNotChecked {
+		t.Fatal("expected host.not_checked finding")
+	}
+	if !foundCloudNotChecked {
+		t.Fatal("expected cloud_external.not_checked finding")
+	}
+	if report.Summary.BySeverity[config.SeverityNotChecked] != 2 {
+		t.Fatalf("expected two not_checked findings, got %d", report.Summary.BySeverity[config.SeverityNotChecked])
+	}
+}
+
 func TestEvaluate_FindsMissingPasswordlessSudo(t *testing.T) {
 	cfg := config.Default("demo")
 	snapshot := inventory.Snapshot{

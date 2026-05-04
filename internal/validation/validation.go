@@ -21,7 +21,15 @@ var severityRank = map[string]int{
 
 var hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
+type Options struct {
+	Local bool
+}
+
 func Check(cfg config.Config) (warnings []string, errs []error) {
+	return CheckWithOptions(cfg, Options{})
+}
+
+func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs []error) {
 	if strings.TrimSpace(cfg.ProjectName) == "" {
 		errs = append(errs, fmt.Errorf("project_name is required"))
 	}
@@ -41,7 +49,7 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 	if cfg.Server.SSHPort <= 0 || cfg.Server.SSHPort > 65535 {
 		errs = append(errs, fmt.Errorf("server.ssh_port must be between 1 and 65535"))
 	}
-	if strings.TrimSpace(cfg.Server.PrivateKeyPath) == "" {
+	if !opts.Local && strings.TrimSpace(cfg.Server.PrivateKeyPath) == "" {
 		errs = append(errs, fmt.Errorf("server.private_key_path is required"))
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Server.HostKeyChecking)) {

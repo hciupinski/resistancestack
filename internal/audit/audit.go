@@ -15,7 +15,7 @@ import (
 func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 	findings := []Finding{}
 	add := func(f Finding) {
-		if severityOrder[f.Severity] == 0 {
+		if _, ok := severityOrder[f.Severity]; !ok {
 			f.Severity = config.SeverityLow
 		}
 		findings = append(findings, f)
@@ -23,8 +23,25 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 
 	managedSSHUsers := config.ManagedSSHAllowUsers(cfg)
 	futureSSHUsers := config.FutureSSHLoginUsers(cfg)
+	hostChecked := snapshot.Areas.Host.Status != inventory.AreaStatusNotChecked
+	cloudExternalChecked := snapshot.Areas.CloudExternal.Status != inventory.AreaStatusNotChecked
 
-	if !snapshot.UFW.Enabled {
+	if !hostChecked {
+		reason := strings.TrimSpace(snapshot.Areas.Host.Reason)
+		if reason == "" {
+			reason = "host inventory was not collected"
+		}
+		add(Finding{
+			ID:             "host.not_checked",
+			Module:         "host-hardening",
+			Severity:       config.SeverityNotChecked,
+			Description:    "Host hardening checks were not executed.",
+			DetectedValue:  reason,
+			Risk:           "SSH, sudo, firewall, fail2ban, exposed ports, TLS files, and host services are outside this local audit snapshot.",
+			Recommendation: "Run `resistack inventory` or `resistack audit` without `--local` after SSH access is configured.",
+			AutoRemediable: false,
+		})
+	} else if !snapshot.UFW.Enabled {
 		add(Finding{
 			ID:             "host.ufw.disabled",
 			Module:         "host-hardening",
@@ -36,7 +53,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: true,
 		})
 	}
-	if cfg.HostHardening.SSHHardening.RequirePasswordlessSudo && !snapshot.PasswordlessSudo {
+	if hostChecked && cfg.HostHardening.SSHHardening.RequirePasswordlessSudo && !snapshot.PasswordlessSudo {
 		add(Finding{
 			ID:             "host.sudo.passwordless-missing",
 			Module:         "host-hardening",
@@ -48,7 +65,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if snapshot.Fail2ban.Status != "active" {
+	if hostChecked && snapshot.Fail2ban.Status != "active" {
 		add(Finding{
 			ID:             "host.fail2ban.inactive",
 			Module:         "host-hardening",
@@ -60,7 +77,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: true,
 		})
 	}
-	if slices.Contains(snapshot.SSHUsers, "root") && cfg.HostHardening.SSHHardening.DisableRootLogin {
+	if hostChecked && slices.Contains(snapshot.SSHUsers, "root") && cfg.HostHardening.SSHHardening.DisableRootLogin {
 		add(Finding{
 			ID:             "host.ssh.root-login",
 			Module:         "host-hardening",
@@ -72,7 +89,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: true,
 		})
 	}
-	if cfg.Server.SSHUser != "" && !slices.Contains(futureSSHUsers, cfg.Server.SSHUser) {
+	if hostChecked && cfg.Server.SSHUser != "" && !slices.Contains(futureSSHUsers, cfg.Server.SSHUser) {
 		add(Finding{
 			ID:             "host.ssh.configured-user-cutoff",
 			Module:         "host-hardening",
@@ -84,7 +101,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if cfg.Server.SSHUser == "root" && cfg.HostHardening.SSHHardening.DisableRootLogin && len(futureSSHUsers) == 0 {
+	if hostChecked && cfg.Server.SSHUser == "root" && cfg.HostHardening.SSHHardening.DisableRootLogin && len(futureSSHUsers) == 0 {
 		add(Finding{
 			ID:             "host.ssh.root-cutoff-without-replacement",
 			Module:         "host-hardening",
@@ -96,7 +113,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if len(managedSSHUsers) > 0 {
+	if hostChecked && len(managedSSHUsers) > 0 {
 		missingManagedSSHUsers := []string{}
 		presentFutureSSHUsers := 0
 		for _, user := range managedSSHUsers {
@@ -130,7 +147,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			})
 		}
 	}
-	if hasPublicPort(snapshot.ExposedPorts, 2375) {
+	if hostChecked && hasPublicPort(snapshot.ExposedPorts, 2375) {
 		add(Finding{
 			ID:             "host.docker.public-api",
 			Module:         "host-hardening",
@@ -168,7 +185,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if operatorAccessMode == config.OperatorAccessModeAllowlistOnly && snapshot.CurrentSessionIP != "" && !netutil.IPInAllowlist(snapshot.CurrentSessionIP, cfg.HostHardening.UFWPolicy.AdminAllowlist) {
+	if hostChecked && operatorAccessMode == config.OperatorAccessModeAllowlistOnly && snapshot.CurrentSessionIP != "" && !netutil.IPInAllowlist(snapshot.CurrentSessionIP, cfg.HostHardening.UFWPolicy.AdminAllowlist) {
 		add(Finding{
 			ID:             "host.ssh.current-session-not-allowlisted",
 			Module:         "host-hardening",
@@ -180,7 +197,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			AutoRemediable: false,
 		})
 	}
-	if snapshot.Proxy.Kind == "none" && len(cfg.AppInventory.Domains) > 0 {
+	if hostChecked && snapshot.Proxy.Kind == "none" && len(cfg.AppInventory.Domains) > 0 {
 		add(Finding{
 			ID:             "inventory.proxy.none",
 			Module:         "inventory-audit",
@@ -193,7 +210,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 		})
 	}
 	primaryDomain := cfg.PrimaryDomain()
-	if cfg.HostHardening.SSLCertificates.Enabled && primaryDomain != "" {
+	if hostChecked && cfg.HostHardening.SSLCertificates.Enabled && primaryDomain != "" {
 		matchedCert, status := inventory.LookupCertificateForDomain(snapshot.TLSCertificates, primaryDomain)
 		if status != inventory.TLSCertificateStatusValid {
 			detectedValue := "missing"
@@ -218,7 +235,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			})
 		}
 	}
-	if !snapshot.Observability.Enabled {
+	if hostChecked && !snapshot.Observability.Enabled {
 		add(Finding{
 			ID:             "observability.disabled",
 			Module:         "security-observability",
@@ -228,6 +245,22 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			Risk:           "Security signals from journald, nginx, docker, fail2ban, and disk pressure are not summarized centrally.",
 			Recommendation: "Run `resistack observability enable` to install the local baseline timer and snapshots.",
 			AutoRemediable: true,
+		})
+	}
+	if !cloudExternalChecked {
+		reason := strings.TrimSpace(snapshot.Areas.CloudExternal.Reason)
+		if reason == "" {
+			reason = "cloud and external services were not collected"
+		}
+		add(Finding{
+			ID:             "cloud_external.not_checked",
+			Module:         "cloud-external",
+			Severity:       config.SeverityNotChecked,
+			Description:    "Cloud and external dependency checks were not executed.",
+			DetectedValue:  reason,
+			Risk:           "DNS, CDN/WAF, cloud firewall, provider backups, and external TLS termination may affect security posture but are not represented in this report.",
+			Recommendation: "Add provider-specific checks in a remote or cloud-aware audit workflow.",
+			AutoRemediable: false,
 		})
 	}
 	if len(snapshot.Repo.GitHubWorkflows) == 0 {
@@ -267,7 +300,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 	}
 
 	summary := Summary{BySeverity: map[string]int{}}
-	for _, severity := range []string{config.SeverityCritical, config.SeverityHigh, config.SeverityMedium, config.SeverityLow} {
+	for _, severity := range []string{config.SeverityCritical, config.SeverityHigh, config.SeverityMedium, config.SeverityLow, config.SeverityNotChecked} {
 		summary.BySeverity[severity] = 0
 	}
 	topSeverity := config.SeverityLow

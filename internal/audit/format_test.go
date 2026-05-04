@@ -44,6 +44,7 @@ func TestFormatText_RendersReport(t *testing.T) {
 		"high: 2\n" +
 		"medium: 0\n" +
 		"low: 0\n" +
+		"not_checked: 0\n" +
 		"\n" +
 		"Findings:\n" +
 		"- [CRITICAL] docker api exposed (host-hardening)\n" +
@@ -82,6 +83,7 @@ func TestFormatText_NoFindings(t *testing.T) {
 		"high: 0\n" +
 		"medium: 0\n" +
 		"low: 0\n" +
+		"not_checked: 0\n" +
 		"No findings.\n"
 
 	if got := FormatText(report); got != want {

@@ -13,6 +13,11 @@ import (
 func TestRenderInventory(t *testing.T) {
 	var out bytes.Buffer
 	snapshot := inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo:          inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host:          inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			CloudExternal: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+		},
 		Host:             inventory.HostInfo{Hostname: "demo", OS: "ubuntu"},
 		Proxy:            inventory.ProxyInfo{Kind: "nginx"},
 		Runtime:          inventory.RuntimeInfo{Kind: "docker-compose"},
@@ -28,6 +33,7 @@ func TestRenderInventory(t *testing.T) {
 	renderInventory(&out, snapshot)
 
 	const want = "" +
+		"Areas: repo=checked host=checked cloud/external=checked\n" +
 		"Host: demo\n" +
 		"OS: ubuntu\n" +
 		"Proxy: nginx\n" +
@@ -45,11 +51,11 @@ func TestRenderInventory(t *testing.T) {
 
 func TestFormatStatus(t *testing.T) {
 	snapshot := inventory.Snapshot{
-		Host:          inventory.HostInfo{Hostname: "demo", OS: "ubuntu"},
-		Proxy:         inventory.ProxyInfo{Kind: "nginx"},
-		Runtime:       inventory.RuntimeInfo{Kind: "docker-compose"},
-		UFW:           inventory.ServiceState{Status: "active"},
-		Fail2ban:      inventory.ServiceState{Status: "active"},
+		Host:     inventory.HostInfo{Hostname: "demo", OS: "ubuntu"},
+		Proxy:    inventory.ProxyInfo{Kind: "nginx"},
+		Runtime:  inventory.RuntimeInfo{Kind: "docker-compose"},
+		UFW:      inventory.ServiceState{Status: "active"},
+		Fail2ban: inventory.ServiceState{Status: "active"},
 		Observability: inventory.ObservabilityInfo{
 			Enabled:         true,
 			Status:          "enabled",
@@ -62,7 +68,7 @@ func TestFormatStatus(t *testing.T) {
 			LokiService:     inventory.ServiceState{Status: "active"},
 			AlloyService:    inventory.ServiceState{Status: "active"},
 		},
-		Containers:    []inventory.ContainerInfo{{Name: "api", Status: "running", Restarts: 1}},
+		Containers: []inventory.ContainerInfo{{Name: "api", Status: "running", Restarts: 1}},
 	}
 	report := audit.Report{
 		GeneratedAt: time.Date(2026, 3, 25, 12, 0, 0, 0, time.UTC),

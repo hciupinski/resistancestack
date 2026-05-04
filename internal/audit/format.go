@@ -12,7 +12,7 @@ func FormatText(report Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Audit generated at: %s\n", report.GeneratedAt.Format(time.RFC3339))
 	fmt.Fprintf(&b, "Top severity: %s\n", report.Summary.TopSeverity)
-	for _, severity := range []string{config.SeverityCritical, config.SeverityHigh, config.SeverityMedium, config.SeverityLow} {
+	for _, severity := range []string{config.SeverityCritical, config.SeverityHigh, config.SeverityMedium, config.SeverityLow, config.SeverityNotChecked} {
 		fmt.Fprintf(&b, "%s: %d\n", severity, report.Summary.BySeverity[severity])
 	}
 	if len(report.Findings) == 0 {

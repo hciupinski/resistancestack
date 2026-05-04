@@ -29,11 +29,44 @@ func Inventory(cfg config.Config, root string, out io.Writer) (inventory.Snapsho
 	return snapshot, nil
 }
 
+func InventoryLocal(cfg config.Config, root string, out io.Writer) (inventory.Snapshot, error) {
+	warnings, errs := preflight.CheckLocal(cfg, false)
+	printWarnings(out, warnings)
+	printErrors(out, "preflight error", errs)
+	if len(errs) > 0 {
+		return inventory.Snapshot{}, errors.New("preflight checks failed")
+	}
+	snapshot, err := inventory.CollectLocal(cfg, root)
+	if err != nil {
+		return inventory.Snapshot{}, err
+	}
+	renderInventory(out, snapshot)
+	return snapshot, nil
+}
+
 func Audit(cfg config.Config, root string, dryRun bool, out io.Writer) (audit.Report, error) {
 	if dryRun {
 		fmt.Fprintln(out, "audit is read-only; proceeding in dry-run mode")
 	}
 	snapshot, err := inventory.Collect(cfg, root)
+	if err != nil {
+		return audit.Report{}, err
+	}
+	report := audit.Evaluate(cfg, snapshot)
+	reportPath, err := audit.Save(root, cfg, report)
+	if err != nil {
+		return audit.Report{}, err
+	}
+	fmt.Fprintln(out, audit.FormatText(report))
+	fmt.Fprintf(out, "Saved audit report to %s\n", reportPath)
+	return report, nil
+}
+
+func AuditLocal(cfg config.Config, root string, dryRun bool, out io.Writer) (audit.Report, error) {
+	if dryRun {
+		fmt.Fprintln(out, "audit is read-only; proceeding in dry-run mode")
+	}
+	snapshot, err := inventory.CollectLocal(cfg, root)
 	if err != nil {
 		return audit.Report{}, err
 	}

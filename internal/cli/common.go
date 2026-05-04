@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
@@ -12,15 +14,36 @@ import (
 
 const defaultConfigPath = "resistack.yaml"
 
+type loadConfigOptions struct {
+	Local        bool
+	DefaultRoot  string
+	OutputFormat string
+}
+
 func loadConfigWithValidation(configPath string, env string, errOut io.Writer, outputOverride ...string) (config.Config, string, error) {
+	outputFormat := ""
+	if len(outputOverride) > 0 {
+		outputFormat = outputOverride[0]
+	}
+	return loadConfigWithValidationOptions(configPath, env, errOut, loadConfigOptions{OutputFormat: outputFormat})
+}
+
+func loadConfigWithValidationOptions(configPath string, env string, errOut io.Writer, opts loadConfigOptions) (config.Config, string, error) {
 	cfg, overlayPath, err := config.LoadWithEnv(configPath, env)
 	if err != nil {
-		return config.Config{}, "", err
+		if !opts.Local || env != "" || !os.IsNotExist(rootCause(err)) {
+			return config.Config{}, "", err
+		}
+		projectName := "resistack"
+		if opts.DefaultRoot != "" {
+			projectName = filepath.Base(opts.DefaultRoot)
+		}
+		cfg = config.Default(projectName)
 	}
-	if len(outputOverride) > 0 && strings.TrimSpace(outputOverride[0]) != "" {
-		cfg.Reporting.Format = strings.ToLower(strings.TrimSpace(outputOverride[0]))
+	if strings.TrimSpace(opts.OutputFormat) != "" {
+		cfg.Reporting.Format = strings.ToLower(strings.TrimSpace(opts.OutputFormat))
 	}
-	warnings, errs := validation.Check(cfg)
+	warnings, errs := validation.CheckWithOptions(cfg, validation.Options{Local: opts.Local})
 	for _, warning := range warnings {
 		fmt.Fprintf(errOut, "warning: %s\n", warning)
 	}
@@ -29,6 +52,16 @@ func loadConfigWithValidation(configPath string, env string, errOut io.Writer, o
 		return config.Config{}, "", invalidConfigError(errs)
 	}
 	return cfg, overlayPath, nil
+}
+
+func rootCause(err error) error {
+	for {
+		unwrapped := errors.Unwrap(err)
+		if unwrapped == nil {
+			return err
+		}
+		err = unwrapped
+	}
 }
 
 func writeValidationErrors(errOut io.Writer, errs []error) {

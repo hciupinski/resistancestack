@@ -8,6 +8,7 @@ import (
 
 type Snapshot struct {
 	CollectedAt      time.Time         `json:"collected_at"`
+	Areas            Areas             `json:"areas"`
 	CurrentSessionIP string            `json:"current_session_ip"`
 	Host             HostInfo          `json:"host"`
 	Proxy            ProxyInfo         `json:"proxy"`
@@ -24,6 +25,22 @@ type Snapshot struct {
 	Repo             RepoInfo          `json:"repo"`
 	Observability    ObservabilityInfo `json:"observability"`
 }
+
+type Areas struct {
+	Repo          AreaStatus `json:"repo"`
+	Host          AreaStatus `json:"host"`
+	CloudExternal AreaStatus `json:"cloud_external"`
+}
+
+type AreaStatus struct {
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
+
+const (
+	AreaStatusChecked    = "checked"
+	AreaStatusNotChecked = "not_checked"
+)
 
 type HostInfo struct {
 	Hostname string `json:"hostname"`
@@ -87,14 +104,14 @@ type RepoInfo struct {
 }
 
 type ObservabilityInfo struct {
-	Enabled            bool         `json:"enabled"`
-	Status             string       `json:"status"`
-	DashboardURL       string       `json:"dashboard_url"`
-	CredentialsPath    string       `json:"credentials_path"`
-	LastSnapshotAt     string       `json:"last_snapshot_at"`
-	SnapshotService    ServiceState `json:"snapshot_service"`
-	SnapshotTimer      ServiceState `json:"snapshot_timer"`
-	GrafanaService     ServiceState `json:"grafana_service"`
-	LokiService        ServiceState `json:"loki_service"`
-	AlloyService       ServiceState `json:"alloy_service"`
+	Enabled         bool         `json:"enabled"`
+	Status          string       `json:"status"`
+	DashboardURL    string       `json:"dashboard_url"`
+	CredentialsPath string       `json:"credentials_path"`
+	LastSnapshotAt  string       `json:"last_snapshot_at"`
+	SnapshotService ServiceState `json:"snapshot_service"`
+	SnapshotTimer   ServiceState `json:"snapshot_timer"`
+	GrafanaService  ServiceState `json:"grafana_service"`
+	LokiService     ServiceState `json:"loki_service"`
+	AlloyService    ServiceState `json:"alloy_service"`
 }

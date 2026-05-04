@@ -164,28 +164,44 @@ func newDoctorCommand() *cobra.Command {
 }
 
 func newInventoryCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
-	return &cobra.Command{
+	var local bool
+	cmd := &cobra.Command{
 		Use:   "inventory",
 		Short: "Detect current VPS and repository state",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := loadContext(opts.selection(), out, errOut)
+			selection := opts.selection()
+			selection.Local = local
+			ctx, err := loadContext(selection, out, errOut)
 			if err != nil {
+				return err
+			}
+			if local {
+				_, err = stack.InventoryLocal(ctx.Config, ctx.Root, ctx.Out)
 				return err
 			}
 			_, err = stack.Inventory(ctx.Config, ctx.Root, ctx.Out)
 			return err
 		},
 	}
+	cmd.Flags().BoolVar(&local, "local", false, "Inspect repository evidence without opening an SSH connection")
+	return cmd
 }
 
 func newAuditCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
 	var dryRun bool
+	var local bool
 	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Generate risk report and remediation plan",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, err := loadContext(opts.selection(), out, errOut)
+			selection := opts.selection()
+			selection.Local = local
+			ctx, err := loadContext(selection, out, errOut)
 			if err != nil {
+				return err
+			}
+			if local {
+				_, err = stack.AuditLocal(ctx.Config, ctx.Root, dryRun, ctx.Out)
 				return err
 			}
 			_, err = stack.Audit(ctx.Config, ctx.Root, dryRun, ctx.Out)
@@ -193,6 +209,7 @@ func newAuditCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Explain what audit will do while keeping the read-only execution path")
+	cmd.Flags().BoolVar(&local, "local", false, "Inspect repository evidence without opening an SSH connection")
 	return cmd
 }
 
