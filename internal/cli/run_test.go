@@ -13,7 +13,7 @@ func TestRun_PrintsUsageWhenNoArgs(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	if got := out.String(); !strings.Contains(got, "resistack - ResistanceStack v2 CLI") {
+	if got := out.String(); !strings.Contains(got, "ResistanceStack v2 CLI") || !strings.Contains(got, "Available Commands:") {
 		t.Fatalf("expected usage output, got %q", got)
 	}
 }
@@ -39,7 +39,7 @@ func TestRun_ReturnsUnknownCommandError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected unknown command error")
 	}
-	if got := err.Error(); got != `unknown command "unknown"` {
+	if got := err.Error(); !strings.Contains(got, `unknown command "unknown"`) {
 		t.Fatalf("unexpected error %q", got)
 	}
 }
@@ -71,5 +71,41 @@ func TestRun_DeployUserRequiresSubcommand(t *testing.T) {
 	}
 	if got := err.Error(); got != "deploy-user requires a subcommand: check or bootstrap" {
 		t.Fatalf("unexpected error %q", got)
+	}
+}
+
+func TestRun_RootHelpShowsPersistentFlagsAndCompletion(t *testing.T) {
+	var out bytes.Buffer
+	if err := Run([]string{"--help"}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run help: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"--config", "--env", "--output", "--verbose", "--non-interactive", "completion"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected help to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestRun_CommandHelpShowsPersistentFlags(t *testing.T) {
+	var out bytes.Buffer
+	if err := Run([]string{"audit", "--help"}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run audit help: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"--dry-run", "--config", "--env", "--output"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected audit help to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestExitCode_MapsNotImplementedToUsageError(t *testing.T) {
+	err := Run([]string{"doctor"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected doctor to be not implemented")
+	}
+	if got := ExitCode(err); got != 2 {
+		t.Fatalf("unexpected exit code %d", got)
 	}
 }

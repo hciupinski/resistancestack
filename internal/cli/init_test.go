@@ -53,7 +53,7 @@ host_hardening:
 	}
 
 	var out bytes.Buffer
-	if err := runInit([]string{"--config", configPath, "demo"}, &out); err != nil {
+	if err := Run([]string{"init", "--config", configPath, "demo"}, &out, &bytes.Buffer{}); err != nil {
 		t.Fatalf("run init: %v", err)
 	}
 
@@ -92,12 +92,12 @@ func TestRunInitReportsWhenConfigAlreadyUpToDate(t *testing.T) {
 	configPath := filepath.Join(root, "resistack.yaml")
 
 	var first bytes.Buffer
-	if err := runInit([]string{"--config", configPath, "demo"}, &first); err != nil {
+	if err := Run([]string{"init", "--config", configPath, "demo"}, &first, &bytes.Buffer{}); err != nil {
 		t.Fatalf("first init: %v", err)
 	}
 
 	var second bytes.Buffer
-	if err := runInit([]string{"--config", configPath, "demo"}, &second); err != nil {
+	if err := Run([]string{"init", "--config", configPath, "demo"}, &second, &bytes.Buffer{}); err != nil {
 		t.Fatalf("second init: %v", err)
 	}
 

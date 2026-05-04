@@ -5,3 +5,4 @@ dist/
 .cache/
 resistack.yaml
 resistack.local.yaml
+.ai/

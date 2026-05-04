@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,69 +16,57 @@ func TestConfigBackedCommandsAcceptEnvFlag(t *testing.T) {
 
 	tests := []struct {
 		name string
-		run  func([]string, io.Writer, io.Writer) error
 		args []string
 	}{
 		{
 			name: "inventory",
-			run:  runInventory,
-			args: []string{"--config", configPath, "--env", "prod"},
+			args: []string{"inventory", "--config", configPath, "--env", "prod"},
 		},
 		{
 			name: "audit",
-			run:  runAudit,
-			args: []string{"--config", configPath, "--env", "prod", "--dry-run"},
+			args: []string{"audit", "--config", configPath, "--env", "prod", "--dry-run"},
 		},
 		{
 			name: "apply",
-			run:  runApply,
-			args: []string{"--config", configPath, "--env", "prod", "--dry-run", "host-hardening"},
+			args: []string{"apply", "--config", configPath, "--env", "prod", "--dry-run", "host-hardening"},
 		},
 		{
 			name: "status",
-			run:  runStatus,
-			args: []string{"--config", configPath, "--env", "prod"},
+			args: []string{"status", "--config", configPath, "--env", "prod"},
 		},
 		{
 			name: "deploy-user check",
-			run:  runDeployUser,
-			args: []string{"check", "--config", configPath, "--env", "prod"},
+			args: []string{"deploy-user", "check", "--config", configPath, "--env", "prod"},
 		},
 		{
 			name: "deploy-user bootstrap",
-			run:  runDeployUser,
-			args: []string{"bootstrap", "--config", configPath, "--env", "prod", "--dry-run"},
+			args: []string{"deploy-user", "bootstrap", "--config", configPath, "--env", "prod", "--dry-run"},
 		},
 		{
 			name: "ci generate",
-			run:  runCI,
-			args: []string{"generate", "--config", configPath, "--env", "prod"},
+			args: []string{"ci", "generate", "--config", configPath, "--env", "prod"},
 		},
 		{
 			name: "ci validate",
-			run:  runCI,
-			args: []string{"validate", "--config", configPath, "--env", "prod"},
+			args: []string{"ci", "validate", "--config", configPath, "--env", "prod"},
 		},
 		{
 			name: "observability enable",
-			run:  runObservability,
-			args: []string{"enable", "--config", configPath, "--env", "prod", "--dry-run"},
+			args: []string{"observability", "enable", "--config", configPath, "--env", "prod", "--dry-run"},
 		},
 		{
 			name: "observability disable",
-			run:  runObservability,
-			args: []string{"disable", "--config", configPath, "--env", "prod"},
+			args: []string{"observability", "disable", "--config", configPath, "--env", "prod"},
 		},
 		{
 			name: "rollback host",
-			run:  runRollback,
-			args: []string{"host", "--config", configPath, "--env", "prod"},
+			args: []string{"rollback", "host", "--config", configPath, "--env", "prod"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.run(tt.args, &bytes.Buffer{}, &bytes.Buffer{})
+			err := Run(tt.args, &bytes.Buffer{}, &bytes.Buffer{})
 			if err == nil {
 				t.Fatal("expected missing overlay error")
 			}
@@ -90,16 +77,46 @@ func TestConfigBackedCommandsAcceptEnvFlag(t *testing.T) {
 	}
 }
 
-func TestRunApply_AcceptsFlagsAfterModules(t *testing.T) {
+func TestRunApplyCobra_AcceptsPersistentFlagsAfterModules(t *testing.T) {
 	root := t.TempDir()
 	configPath := writeValidConfig(t, root)
 
-	err := runApply([]string{"host-hardening", "--env", "prod", "--dry-run", "--config", configPath}, &bytes.Buffer{}, &bytes.Buffer{})
+	err := Run([]string{"apply", "host-hardening", "--env", "prod", "--dry-run", "--config", configPath}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected missing overlay error")
 	}
 	if got := err.Error(); !strings.Contains(got, `environment overlay "prod" not found`) {
 		t.Fatalf("unexpected error %q", got)
+	}
+}
+
+func TestRun_UsesConfigFromEnvironment(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "from-env.yaml")
+	t.Setenv("RESISTACK_CONFIG", configPath)
+
+	var out bytes.Buffer
+	if err := Run([]string{"init", "env-demo"}, &out, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("expected config from env to be created: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, configPath) {
+		t.Fatalf("expected output to mention env config path, got %q", got)
+	}
+}
+
+func TestLoadContext_OutputOverrideUpdatesReportingFormat(t *testing.T) {
+	root := t.TempDir()
+	configPath := writeValidConfig(t, root)
+
+	ctx, err := loadContext(ConfigSelection{ConfigPath: configPath, OutputFormat: config.FormatJSON}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("load context: %v", err)
+	}
+	if ctx.Config.Reporting.Format != config.FormatJSON {
+		t.Fatalf("expected reporting format override, got %q", ctx.Config.Reporting.Format)
 	}
 }
 
@@ -175,7 +192,7 @@ func TestRunRollback_UsesEnvOverlayDuringValidation(t *testing.T) {
 	}
 
 	var errOut bytes.Buffer
-	err := runRollback([]string{"host", "--config", configPath, "--env", "prod"}, &bytes.Buffer{}, &errOut)
+	err := Run([]string{"rollback", "host", "--config", configPath, "--env", "prod"}, &bytes.Buffer{}, &errOut)
 	if err == nil {
 		t.Fatal("expected validation error")
 	}
