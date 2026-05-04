@@ -1,18 +1,17 @@
 package cli
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 )
 
 type ConfigSelection struct {
-	ConfigPath string
-	Env        string
+	ConfigPath   string
+	Env          string
+	OutputFormat string
 }
 
 type Context struct {
@@ -25,29 +24,8 @@ type Context struct {
 	ErrOut      io.Writer
 }
 
-func newConfigFlagSet(name string) (*flag.FlagSet, *string, *string) {
-	fs := newFlagSet(name)
-	configPath := fs.String("config", defaultConfigPath, "Path to configuration file")
-	envName := fs.String("env", "", "Environment overlay name")
-	return fs, configPath, envName
-}
-
-func parseConfigSelection(fs *flag.FlagSet, args []string, configPath *string, envName *string) (ConfigSelection, error) {
-	if err := fs.Parse(args); err != nil {
-		return ConfigSelection{}, err
-	}
-	selection := ConfigSelection{
-		ConfigPath: strings.TrimSpace(*configPath),
-		Env:        strings.TrimSpace(*envName),
-	}
-	if err := config.ValidateEnvName(selection.Env); err != nil {
-		return ConfigSelection{}, err
-	}
-	return selection, nil
-}
-
 func loadContext(selection ConfigSelection, out io.Writer, errOut io.Writer) (Context, error) {
-	cfg, overlayPath, err := loadConfigWithValidation(selection.ConfigPath, selection.Env, errOut)
+	cfg, overlayPath, err := loadConfigWithValidation(selection.ConfigPath, selection.Env, errOut, selection.OutputFormat)
 	if err != nil {
 		return Context{}, err
 	}

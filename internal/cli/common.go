@@ -2,9 +2,9 @@ package cli
 
 import (
 	"errors"
-	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/validation"
@@ -12,16 +12,13 @@ import (
 
 const defaultConfigPath = "resistack.yaml"
 
-func newFlagSet(name string) *flag.FlagSet {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	return fs
-}
-
-func loadConfigWithValidation(configPath string, env string, errOut io.Writer) (config.Config, string, error) {
+func loadConfigWithValidation(configPath string, env string, errOut io.Writer, outputOverride ...string) (config.Config, string, error) {
 	cfg, overlayPath, err := config.LoadWithEnv(configPath, env)
 	if err != nil {
 		return config.Config{}, "", err
+	}
+	if len(outputOverride) > 0 && strings.TrimSpace(outputOverride[0]) != "" {
+		cfg.Reporting.Format = strings.ToLower(strings.TrimSpace(outputOverride[0]))
 	}
 	warnings, errs := validation.Check(cfg)
 	for _, warning := range warnings {
