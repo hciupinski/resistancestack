@@ -10,6 +10,7 @@ import (
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/deployuser"
+	"github.com/hciupinski/resistancestack/internal/doctor"
 	"github.com/hciupinski/resistancestack/internal/observability"
 	"github.com/hciupinski/resistancestack/internal/stack"
 	"github.com/spf13/cobra"
@@ -25,6 +26,8 @@ const (
 )
 
 var errNotImplemented = errors.New("not implemented")
+
+var Version = "dev"
 
 type rootOptions struct {
 	configPath     string
@@ -89,7 +92,7 @@ func NewRootCommand(out io.Writer, errOut io.Writer) *cobra.Command {
 	root.AddCommand(
 		newInitCommand(&opts, out),
 		newWizardCommand(),
-		newDoctorCommand(),
+		newDoctorCommand(&opts, out, errOut),
 		newInventoryCommand(&opts, out, errOut),
 		newAuditCommand(&opts, out, errOut),
 		newApplyCommand(&opts, out, errOut),
@@ -153,14 +156,53 @@ func newWizardCommand() *cobra.Command {
 	}
 }
 
-func newDoctorCommand() *cobra.Command {
-	return &cobra.Command{
+func newDoctorCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
+	var local bool
+	var remoteOnly bool
+	var all bool
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check local and remote compatibility before applying changes",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("doctor command: %w; planned for MVP-03", errNotImplemented)
+			selected := 0
+			for _, enabled := range []bool{local, remoteOnly, all} {
+				if enabled {
+					selected++
+				}
+			}
+			if selected > 1 {
+				return fmt.Errorf("doctor accepts only one of --local, --remote, or --all")
+			}
+			mode := doctor.ModeAll
+			switch {
+			case local:
+				mode = doctor.ModeLocal
+			case remoteOnly:
+				mode = doctor.ModeRemote
+			case all:
+				mode = doctor.ModeAll
+			}
+
+			selection := opts.selection()
+			selection.Local = true
+			ctx, err := loadContext(selection, out, errOut)
+			if err != nil {
+				return err
+			}
+			report, err := stack.Doctor(ctx.Config, ctx.Root, doctor.Options{Mode: mode, Version: Version}, ctx.Out)
+			if err != nil {
+				return err
+			}
+			if report.HasFailures() {
+				return fmt.Errorf("doctor checks failed")
+			}
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&local, "local", false, "Check local prerequisites only")
+	cmd.Flags().BoolVar(&remoteOnly, "remote", false, "Check remote host prerequisites only")
+	cmd.Flags().BoolVar(&all, "all", false, "Check local and remote prerequisites")
+	return cmd
 }
 
 func newInventoryCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
@@ -215,6 +257,7 @@ func newAuditCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.
 
 func newApplyCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
 	var dryRun bool
+	var forceWithRiskAcceptance bool
 	cmd := &cobra.Command{
 		Use:   "apply [modules...]",
 		Short: "Apply selected security modules",
@@ -223,10 +266,11 @@ func newApplyCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.
 			if err != nil {
 				return err
 			}
-			return stack.Apply(ctx.Config, ctx.Root, args, dryRun, ctx.Out, ctx.ErrOut)
+			return stack.Apply(ctx.Config, ctx.Root, args, dryRun, forceWithRiskAcceptance, ctx.Out, ctx.ErrOut)
 		},
 	}
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print intended changes without executing them")
+	cmd.Flags().BoolVar(&forceWithRiskAcceptance, "force-with-risk-acceptance", false, "Bypass failing doctor checks before host-hardening")
 	return cmd
 }
 

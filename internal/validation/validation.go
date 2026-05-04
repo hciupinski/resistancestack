@@ -57,7 +57,7 @@ func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs 
 	default:
 		errs = append(errs, fmt.Errorf("server.host_key_checking must be one of: strict, accept-new"))
 	}
-	if strings.EqualFold(strings.TrimSpace(cfg.Server.HostKeyChecking), "strict") && strings.TrimSpace(cfg.Server.KnownHostsPath) == "" {
+	if !opts.Local && strings.EqualFold(strings.TrimSpace(cfg.Server.HostKeyChecking), "strict") && strings.TrimSpace(cfg.Server.KnownHostsPath) == "" {
 		errs = append(errs, fmt.Errorf("server.known_hosts_path is required when server.host_key_checking=strict"))
 	}
 

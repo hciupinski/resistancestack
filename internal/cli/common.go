@@ -20,14 +20,6 @@ type loadConfigOptions struct {
 	OutputFormat string
 }
 
-func loadConfigWithValidation(configPath string, env string, errOut io.Writer, outputOverride ...string) (config.Config, string, error) {
-	outputFormat := ""
-	if len(outputOverride) > 0 {
-		outputFormat = outputOverride[0]
-	}
-	return loadConfigWithValidationOptions(configPath, env, errOut, loadConfigOptions{OutputFormat: outputFormat})
-}
-
 func loadConfigWithValidationOptions(configPath string, env string, errOut io.Writer, opts loadConfigOptions) (config.Config, string, error) {
 	cfg, overlayPath, err := config.LoadWithEnv(configPath, env)
 	if err != nil {
