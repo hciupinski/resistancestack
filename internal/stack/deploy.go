@@ -8,11 +8,14 @@ import (
 	"github.com/hciupinski/resistancestack/internal/audit"
 	"github.com/hciupinski/resistancestack/internal/ci"
 	"github.com/hciupinski/resistancestack/internal/config"
+	"github.com/hciupinski/resistancestack/internal/doctor"
 	"github.com/hciupinski/resistancestack/internal/hosthardening"
 	"github.com/hciupinski/resistancestack/internal/inventory"
 	"github.com/hciupinski/resistancestack/internal/observability"
 	"github.com/hciupinski/resistancestack/internal/preflight"
 )
+
+var runDoctor = doctor.Run
 
 func Inventory(cfg config.Config, root string, out io.Writer) (inventory.Snapshot, error) {
 	warnings, errs := preflight.CheckLocal(cfg, true)
@@ -80,7 +83,29 @@ func AuditLocal(cfg config.Config, root string, dryRun bool, out io.Writer) (aud
 	return report, nil
 }
 
-func Apply(cfg config.Config, root string, requestedModules []string, dryRun bool, out io.Writer, errOut io.Writer) error {
+func Doctor(cfg config.Config, root string, opts doctor.Options, out io.Writer) (doctor.Report, error) {
+	report, err := doctor.Run(cfg, root, opts)
+	if err != nil {
+		return doctor.Report{}, err
+	}
+	reportPath, err := doctor.Save(root, cfg, report)
+	if err != nil {
+		return doctor.Report{}, err
+	}
+	if cfg.Reporting.Format == config.FormatJSON {
+		raw, err := doctor.FormatJSON(report)
+		if err != nil {
+			return doctor.Report{}, err
+		}
+		fmt.Fprintln(out, string(raw))
+	} else {
+		fmt.Fprintln(out, doctor.FormatText(report))
+	}
+	fmt.Fprintf(out, "Saved doctor report to %s\n", reportPath)
+	return report, nil
+}
+
+func Apply(cfg config.Config, root string, requestedModules []string, dryRun bool, forceWithRiskAcceptance bool, out io.Writer, errOut io.Writer) error {
 	warnings, errs := preflight.CheckLocal(cfg, true)
 	printWarnings(out, warnings)
 	printErrors(errOut, "preflight error", errs)
@@ -91,6 +116,16 @@ func Apply(cfg config.Config, root string, requestedModules []string, dryRun boo
 	modules, err := parseModules(requestedModules)
 	if err != nil {
 		return err
+	}
+	if !dryRun && !forceWithRiskAcceptance && containsModule(modules, ModuleHostHardening) {
+		report, err := runDoctor(cfg, root, doctor.Options{Mode: doctor.ModeAll, Version: "dev"})
+		if err != nil {
+			return err
+		}
+		if report.HasFailures() {
+			fmt.Fprintln(errOut, doctor.FormatText(report))
+			return errors.New("doctor checks failed; run `resistack doctor --all` or pass `--force-with-risk-acceptance` to apply host-hardening anyway")
+		}
 	}
 	for _, module := range modules {
 		switch module {
@@ -129,6 +164,15 @@ func Apply(cfg config.Config, root string, requestedModules []string, dryRun boo
 		}
 	}
 	return nil
+}
+
+func containsModule(modules []Module, expected Module) bool {
+	for _, module := range modules {
+		if module == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func RollbackHost(cfg config.Config, out io.Writer, errOut io.Writer) error {

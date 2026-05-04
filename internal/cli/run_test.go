@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hciupinski/resistancestack/internal/config"
 )
 
 func TestRun_PrintsUsageWhenNoArgs(t *testing.T) {
@@ -169,12 +171,32 @@ func TestRun_AuditLocalWritesReportWithNotCheckedFindings(t *testing.T) {
 	}
 }
 
-func TestExitCode_MapsNotImplementedToUsageError(t *testing.T) {
-	err := Run([]string{"doctor"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil {
-		t.Fatal("expected doctor to be not implemented")
+func TestRun_DoctorLocalWritesReportAndReturnsFailures(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "resistack.yaml")
+	cfg := config.Default("demo")
+	cfg.Server.PrivateKeyPath = filepath.Join(root, "missing-key")
+	cfg.Server.HostKeyChecking = "accept-new"
+	cfg.Reporting.OutputPath = filepath.Join(root, "reports")
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
 	}
-	if got := ExitCode(err); got != 2 {
+
+	var out bytes.Buffer
+	err := Run([]string{"doctor", "--local", "--config", configPath}, &out, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected doctor to return failing status")
+	}
+	if got := ExitCode(err); got != 1 {
 		t.Fatalf("unexpected exit code %d", got)
+	}
+	got := out.String()
+	for _, want := range []string{"Status: fail", "Configured private key exists locally.", "Saved doctor report to"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected doctor output to contain %q, got %q", want, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "reports", "doctor-report.txt")); err != nil {
+		t.Fatalf("expected doctor report to be written: %v", err)
 	}
 }
