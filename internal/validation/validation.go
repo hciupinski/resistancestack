@@ -268,9 +268,7 @@ func validatePrimaryDomain(raw string) error {
 	if net.ParseIP(domain) != nil {
 		return fmt.Errorf("must be a domain name, not an IP address")
 	}
-	if strings.HasSuffix(domain, ".") {
-		domain = strings.TrimSuffix(domain, ".")
-	}
+	domain = strings.TrimSuffix(domain, ".")
 	labels := strings.Split(domain, ".")
 	if len(labels) < 2 {
 		return fmt.Errorf("must contain at least one dot")

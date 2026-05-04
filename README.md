@@ -66,6 +66,32 @@ In the repository:
 
 ## Quick Start
 
+### Install With Homebrew
+
+Recommended installation uses a dedicated Homebrew tap repository:
+
+```bash
+brew install hciupinski/resistack/resistack
+```
+
+That command expects a GitHub repository named `hciupinski/homebrew-resistack`.
+
+If you prefer to add the tap explicitly:
+
+```bash
+brew tap hciupinski/resistack
+brew install resistack
+```
+
+Upgrade later with:
+
+```bash
+brew update
+brew upgrade resistack
+```
+
+See [docs/RELEASE_FLOW.md](docs/RELEASE_FLOW.md) and [docs/HOMEBREW.md](docs/HOMEBREW.md) for the release and tap publishing flow. To support a global install with exactly `brew install resistack` and no tap prefix, the formula must be accepted into Homebrew Core.
+
 ### 1. Create Config
 
 ```bash
