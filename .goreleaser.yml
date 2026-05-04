@@ -1,0 +1,71 @@
+version: 2
+
+project_name: resistack
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: resistack
+    main: ./cmd/resistack
+    binary: resistack
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: resistack
+    builds:
+      - resistack
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: hciupinski
+    name: resistancestack
+
+brews:
+  - name: resistack
+    repository:
+      owner: hciupinski
+      name: homebrew-resistack
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/hciupinski/resistancestack"
+    description: "Baseline security platform for VPS hosts and CI pipelines"
+    license: MIT
+    test: |
+      system "#{bin}/resistack", "--help"
+      system "#{bin}/resistack", "ci", "--help"

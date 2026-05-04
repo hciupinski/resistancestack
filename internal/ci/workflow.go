@@ -151,12 +151,8 @@ func buildDependencyWorkflow(cfg config.Config, profile TechProfile) string {
 func buildContainerWorkflow(cfg config.Config, profile TechProfile) string {
 	continueOnError := workflowContinueOnError(cfg)
 	containerHints := []string{}
-	for _, dockerfile := range profile.Dockerfiles {
-		containerHints = append(containerHints, dockerfile)
-	}
-	for _, composeFile := range profile.ComposeFiles {
-		containerHints = append(containerHints, composeFile)
-	}
+	containerHints = append(containerHints, profile.Dockerfiles...)
+	containerHints = append(containerHints, profile.ComposeFiles...)
 	targets := "."
 	if len(containerHints) > 0 {
 		targets = strings.Join(containerHints, ", ")

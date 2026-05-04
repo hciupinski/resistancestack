@@ -6,3 +6,4 @@ dist/
 resistack.yaml
 resistack.local.yaml
 .ai/
+.codex/
