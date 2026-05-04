@@ -3,6 +3,7 @@ package inventory
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/hciupinski/resistancestack/internal/ci"
 	"github.com/hciupinski/resistancestack/internal/config"
@@ -21,12 +22,69 @@ func Collect(cfg config.Config, root string) (Snapshot, error) {
 	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
 		return Snapshot{}, fmt.Errorf("decode inventory: %w", err)
 	}
+	snapshot.Areas = remoteAreas()
 	repo, err := collectRepoInfo(root, cfg)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	snapshot.Repo = repo
 	return snapshot, nil
+}
+
+func CollectLocal(cfg config.Config, root string) (Snapshot, error) {
+	repo, err := collectRepoInfo(root, cfg)
+	if err != nil {
+		return Snapshot{}, err
+	}
+
+	runtimeKind := "unknown"
+	switch {
+	case len(repo.ComposeFiles) > 0:
+		runtimeKind = "docker-compose"
+	case len(repo.SystemdUnits) > 0:
+		runtimeKind = "systemd"
+	}
+
+	return Snapshot{
+		CollectedAt: time.Now().UTC(),
+		Areas: Areas{
+			Repo: AreaStatus{
+				Status: AreaStatusChecked,
+			},
+			Host: AreaStatus{
+				Status: AreaStatusNotChecked,
+				Reason: "local mode does not open an SSH connection to the host",
+			},
+			CloudExternal: AreaStatus{
+				Status: AreaStatusNotChecked,
+				Reason: "local mode only inspects repository files",
+			},
+		},
+		Host: HostInfo{
+			Hostname: AreaStatusNotChecked,
+			OS:       AreaStatusNotChecked,
+			Kernel:   AreaStatusNotChecked,
+		},
+		Proxy: ProxyInfo{
+			Kind:  AreaStatusNotChecked,
+			Notes: []string{"not checked in local mode"},
+		},
+		Runtime:  RuntimeInfo{Kind: runtimeKind, ComposeFiles: repo.ComposeFiles, SystemdUnits: repo.SystemdUnits},
+		UFW:      ServiceState{Status: AreaStatusNotChecked},
+		Fail2ban: ServiceState{Status: AreaStatusNotChecked},
+		Observability: ObservabilityInfo{
+			Status: AreaStatusNotChecked,
+		},
+		Repo: repo,
+	}, nil
+}
+
+func remoteAreas() Areas {
+	return Areas{
+		Repo:          AreaStatus{Status: AreaStatusChecked},
+		Host:          AreaStatus{Status: AreaStatusChecked},
+		CloudExternal: AreaStatus{Status: AreaStatusChecked},
+	}
 }
 
 func collectRepoInfo(root string, cfg config.Config) (RepoInfo, error) {

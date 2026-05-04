@@ -11,6 +11,13 @@ import (
 )
 
 func renderInventory(out io.Writer, snapshot inventory.Snapshot) {
+	fmt.Fprintf(out, "Areas: repo=%s host=%s cloud/external=%s\n", snapshot.Areas.Repo.Status, snapshot.Areas.Host.Status, snapshot.Areas.CloudExternal.Status)
+	if snapshot.Areas.Host.Reason != "" {
+		fmt.Fprintf(out, "Host not checked: %s\n", snapshot.Areas.Host.Reason)
+	}
+	if snapshot.Areas.CloudExternal.Reason != "" {
+		fmt.Fprintf(out, "Cloud/external not checked: %s\n", snapshot.Areas.CloudExternal.Reason)
+	}
 	fmt.Fprintf(out, "Host: %s\n", snapshot.Host.Hostname)
 	fmt.Fprintf(out, "OS: %s\n", snapshot.Host.OS)
 	fmt.Fprintf(out, "Proxy: %s\n", snapshot.Proxy.Kind)

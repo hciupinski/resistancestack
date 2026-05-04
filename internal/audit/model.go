@@ -38,8 +38,9 @@ type Report struct {
 }
 
 var severityOrder = map[string]int{
-	config.SeverityLow:      1,
-	config.SeverityMedium:   2,
-	config.SeverityHigh:     3,
-	config.SeverityCritical: 4,
+	config.SeverityNotChecked: 0,
+	config.SeverityLow:        1,
+	config.SeverityMedium:     2,
+	config.SeverityHigh:       3,
+	config.SeverityCritical:   4,
 }

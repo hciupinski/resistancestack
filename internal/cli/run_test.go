@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -97,6 +99,73 @@ func TestRun_CommandHelpShowsPersistentFlags(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("expected audit help to contain %q, got %q", want, got)
 		}
+	}
+}
+
+func TestRun_InventoryLocalWorksWithoutConfigOrSSHKey(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"inventory", "--local"}, &out, &errOut); err != nil {
+		t.Fatalf("inventory --local: %v; stderr=%s", err, errOut.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{"Areas: repo=checked host=not_checked cloud/external=not_checked", "Host not checked:", "Runtime: unknown"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected local inventory output to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestRun_AuditLocalWritesReportWithNotCheckedFindings(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".github", "workflows", "deploy.yml"), []byte("name: deploy\n"), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"audit", "--local"}, &out, &errOut); err != nil {
+		t.Fatalf("audit --local: %v; stderr=%s", err, errOut.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{"not_checked: 2", "Host hardening checks were not executed.", "Existing GitHub Actions workflows were found"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected local audit output to contain %q, got %q", want, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".resistack", "reports", "audit-report.txt")); err != nil {
+		t.Fatalf("expected audit report to be written: %v", err)
 	}
 }
 

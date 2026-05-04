@@ -18,6 +18,7 @@ const (
 	SeverityMedium                   = "medium"
 	SeverityHigh                     = "high"
 	SeverityCritical                 = "critical"
+	SeverityNotChecked               = "not_checked"
 	OperatorAccessModePublicHardened = "public_hardened"
 	OperatorAccessModeAllowlistOnly  = "allowlist_only"
 )
