@@ -61,12 +61,14 @@ func NewRootCommand(out io.Writer, errOut io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "resistack",
 		Short:         "ResistanceStack v2 CLI",
+		Version:       Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
 	}
+	root.SetVersionTemplate("{{.Name}} {{.Version}}\n")
 	root.SetOut(out)
 	root.SetErr(errOut)
 

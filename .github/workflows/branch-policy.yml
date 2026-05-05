@@ -1,0 +1,29 @@
+name: Branch Policy
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  main-release-branches-only:
+    name: main accepts release branches only
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate source branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          case "$HEAD_REF" in
+            release/*)
+              exit 0
+              ;;
+            *)
+              echo "Pull requests to main must come from release/* branches."
+              echo "Current source branch: $HEAD_REF"
+              exit 1
+              ;;
+          esac
