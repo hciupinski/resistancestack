@@ -275,9 +275,12 @@ resistack observability disable
 
 ```bash
 resistack rollback host
+resistack rollback host --dry-run
 ```
 
-Host hardening stores backups of modified system files and can restore the latest applied set.
+Host hardening stores backups of modified system files, UFW state, service state, and operation metadata before applying changes.
+Use `--dry-run` to inspect what would be restored before changing the host.
+If no backup exists, rollback prints the backup path it checked and the manual areas to inspect.
 
 ## Command Reference
 
@@ -293,7 +296,7 @@ resistack ci generate
 resistack ci validate
 resistack observability enable [--dry-run]
 resistack observability disable
-resistack rollback host
+resistack rollback host [--dry-run]
 ```
 
 All config-backed commands also accept:

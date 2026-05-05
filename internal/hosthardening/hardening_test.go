@@ -21,6 +21,14 @@ func TestBuildApplyScript_ContainsGuardrailsAndBackups(t *testing.T) {
 		"cleanup_bootstrap_rules",
 		"resistack-bootstrap",
 		"backup_file /etc/ssh/sshd_config",
+		"absent_root=\"${op_dir}/absent\"",
+		"sudo touch \"${absent_marker}\"",
+		"snapshot_service_states",
+		"snapshot_ufw_state",
+		"ufw-status-numbered.txt",
+		"ufw-show-added.txt",
+		"backup_tree /etc/ufw",
+		"printf 'tool_version=%s\\n' \"${TOOL_VERSION}\"",
 		"sudo sshd -t",
 		"operator access mode",
 	} {
@@ -92,6 +100,41 @@ func TestBuildRollbackScript_RestoresLastBackup(t *testing.T) {
 	}
 	if !strings.Contains(script, "sudo find /etc/sudoers.d -maxdepth 1 -type f -name 'resistack-*' -exec rm -f {} +") {
 		t.Fatal("expected rollback script to remove ResistanceStack-managed sudoers snippets")
+	}
+	for _, expected := range []string{
+		"DRY_RUN='false'",
+		"operation manifest",
+		"restore_path",
+		"remove file created by host-hardening",
+		"sudo test -f \"${latest}/manifest.txt\"",
+		"done < <(sudo cat \"${latest}/manifest.txt\")",
+		"previous ufw numbered status",
+		"previous ufw added rules",
+		"restart affected service: fail2ban",
+		"restart affected service: ssh",
+		"restore ufw service state and reload firewall",
+		"no host-hardening backup is available",
+		"manual recovery: inspect /etc/ssh/sshd_config",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("expected %q in rollback script", expected)
+		}
+	}
+}
+
+func TestBuildRollbackScript_DryRunDoesNotChangeHost(t *testing.T) {
+	cfg := config.Default("demo")
+	script := BuildRollbackScriptWithOptions(cfg, true)
+
+	for _, expected := range []string{
+		"DRY_RUN='true'",
+		"dry-run complete; no host changes were made",
+		"[ \"${DRY_RUN}\" = \"true\" ] && return 0",
+		"[ \"${DRY_RUN}\" = \"true\" ] || sudo systemctl restart fail2ban",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("expected %q in rollback dry-run script", expected)
+		}
 	}
 }
 
