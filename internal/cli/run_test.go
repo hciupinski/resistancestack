@@ -17,7 +17,7 @@ func TestRun_PrintsUsageWhenNoArgs(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	if got := out.String(); !strings.Contains(got, "ResistanceStack v2 CLI") || !strings.Contains(got, "Available Commands:") {
+	if got := out.String(); !strings.Contains(got, "ResistanceStack CLI") || !strings.Contains(got, "Available Commands:") {
 		t.Fatalf("expected usage output, got %q", got)
 	}
 }

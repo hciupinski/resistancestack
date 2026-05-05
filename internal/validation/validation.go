@@ -268,7 +268,7 @@ func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs 
 	}
 
 	if hasLegacyManagedDeploy(cfg) {
-		warnings = append(warnings, "legacy managed deploy fields detected; v2 treats them as migration hints only")
+		warnings = append(warnings, "legacy managed deploy fields detected; ResistanceStack treats them as migration hints only")
 	}
 
 	return warnings, errs

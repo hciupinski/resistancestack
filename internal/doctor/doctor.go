@@ -12,6 +12,7 @@ import (
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/fsutil"
 	"github.com/hciupinski/resistancestack/internal/remote"
+	versionpkg "github.com/hciupinski/resistancestack/internal/version"
 )
 
 func Run(cfg config.Config, root string, opts Options) (Report, error) {
@@ -45,7 +46,7 @@ func Run(cfg config.Config, root string, opts Options) (Report, error) {
 
 func CheckLocal(cfg config.Config, root string, version string) []Check {
 	if strings.TrimSpace(version) == "" {
-		version = "dev"
+		version = versionpkg.Current()
 	}
 	checks := []Check{{
 		Area:           ModeLocal,
