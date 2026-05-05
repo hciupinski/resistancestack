@@ -15,6 +15,7 @@ func TestRunWizardCreatesCommentedConfigFromAnswers(t *testing.T) {
 	configPath := filepath.Join(root, "resistack.yaml")
 	input := strings.Join([]string{
 		"demo",
+		"docker-compose",
 		"vps.example.com",
 		"deployer",
 		"2222",
@@ -46,6 +47,9 @@ func TestRunWizardCreatesCommentedConfigFromAnswers(t *testing.T) {
 	}
 	if cfg.ProjectName != "demo" {
 		t.Fatalf("unexpected project name %q", cfg.ProjectName)
+	}
+	if cfg.Deployment.Profile != config.DeploymentProfileDockerCompose {
+		t.Fatalf("unexpected deployment profile %q", cfg.Deployment.Profile)
 	}
 	if cfg.Server.Host != "vps.example.com" || cfg.Server.SSHUser != "deployer" || cfg.Server.SSHPort != 2222 {
 		t.Fatalf("unexpected server config: %#v", cfg.Server)

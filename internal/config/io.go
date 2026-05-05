@@ -116,3 +116,11 @@ func (cfg Config) PrimaryDomain() string {
 	}
 	return strings.TrimSpace(cfg.AppInventory.Domains[0])
 }
+
+func (cfg Config) EffectiveDeploymentProfile() string {
+	profile := strings.ToLower(strings.TrimSpace(cfg.Deployment.Profile))
+	if profile == "" {
+		return DeploymentProfileVPSNginx
+	}
+	return profile
+}

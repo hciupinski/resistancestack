@@ -25,11 +25,17 @@ const (
 	SudoModeLimited                  = "limited"
 	SudoModeFull                     = "full"
 	SudoModeManual                   = "manual"
+	DeploymentProfileVPSNginx        = "vps-nginx"
+	DeploymentProfileDockerCompose   = "docker-compose"
+	DeploymentProfileReverseProxy    = "reverse-proxy"
+	DeploymentProfileNode            = "node"
+	DeploymentProfileDotnet          = "dotnet"
 )
 
 type Config struct {
 	ProjectName     string                `yaml:"project_name"`
 	Mode            ModeConfig            `yaml:"mode"`
+	Deployment      DeploymentConfig      `yaml:"deployment"`
 	Server          ServerConfig          `yaml:"server"`
 	HostHardening   HostHardeningConfig   `yaml:"host_hardening"`
 	AppInventory    AppInventoryConfig    `yaml:"app_inventory"`
@@ -46,6 +52,10 @@ type Config struct {
 
 type ModeConfig struct {
 	Strategy string `yaml:"strategy"`
+}
+
+type DeploymentConfig struct {
+	Profile string `yaml:"profile"`
 }
 
 type ServerConfig struct {

@@ -5,6 +5,7 @@ import "gopkg.in/yaml.v3"
 var defaultLineComments = map[string]string{
 	"project_name":             "Identifier used in reports, generated files, and remote assets.",
 	"mode.strategy":            "Workflow mode. Options: audit_then_apply.",
+	"deployment.profile":       "Deployment profile used by wizard and audit. Options: vps-nginx, docker-compose, reverse-proxy, node, dotnet.",
 	"server.host":              "Target VPS hostname or IP.",
 	"server.ssh_user":          "SSH user used by resistack to connect to the server.",
 	"server.ssh_port":          "SSH port for remote access.",

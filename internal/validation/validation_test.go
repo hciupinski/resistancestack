@@ -25,6 +25,29 @@ func TestCheck_InvalidModeReturnsError(t *testing.T) {
 	}
 }
 
+func TestCheck_InvalidDeploymentProfileReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Deployment.Profile = "lamp"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_EmptyDeploymentProfileIsAllowed(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Deployment.Profile = ""
+
+	_, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	if got := cfg.EffectiveDeploymentProfile(); got != config.DeploymentProfileVPSNginx {
+		t.Fatalf("unexpected effective profile %q", got)
+	}
+}
+
 func TestCheck_InvalidCIProviderReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.CI.Provider = "gitlab"

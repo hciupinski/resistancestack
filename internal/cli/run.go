@@ -217,6 +217,16 @@ func runConfigWizard(in io.Reader, out io.Writer, projectName string) (config.Co
 	if err != nil {
 		return config.Config{}, err
 	}
+	cfg.Deployment.Profile, err = promptChoice(reader, out, "Deployment profile", cfg.EffectiveDeploymentProfile(), []string{
+		config.DeploymentProfileVPSNginx,
+		config.DeploymentProfileDockerCompose,
+		config.DeploymentProfileReverseProxy,
+		config.DeploymentProfileNode,
+		config.DeploymentProfileDotnet,
+	})
+	if err != nil {
+		return config.Config{}, err
+	}
 	cfg.Server.Host, err = promptString(reader, out, "Server host or IP", cfg.Server.Host)
 	if err != nil {
 		return config.Config{}, err
