@@ -29,7 +29,8 @@ func Apply(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) erro
 	return remote.RunScript(target, BuildApplyScript(cfg), out, errOut)
 }
 
-func Rollback(cfg config.Config, out io.Writer, errOut io.Writer) error {
+func Rollback(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) error {
 	target := remote.NewTarget(cfg)
-	return remote.RunScript(target, BuildRollbackScript(cfg), out, errOut)
+	script := BuildRollbackScriptWithOptions(cfg, dryRun)
+	return remote.RunScript(target, script, out, errOut)
 }

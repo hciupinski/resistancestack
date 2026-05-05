@@ -186,8 +186,8 @@ func containsModule(modules []Module, expected Module) bool {
 	return false
 }
 
-func RollbackHost(cfg config.Config, out io.Writer, errOut io.Writer) error {
-	return hosthardening.Rollback(cfg, out, errOut)
+func RollbackHost(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) error {
+	return hosthardening.Rollback(cfg, dryRun, out, errOut)
 }
 
 func ValidateCI(cfg config.Config, root string, out io.Writer) error {

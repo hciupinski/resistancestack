@@ -631,6 +631,7 @@ func newObservabilityCommand(opts *rootOptions, out io.Writer, errOut io.Writer)
 }
 
 func newRollbackCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
+	var dryRun bool
 	parent := &cobra.Command{
 		Use:   "rollback",
 		Short: "Roll back managed changes",
@@ -638,7 +639,7 @@ func newRollbackCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cob
 			return fmt.Errorf("rollback requires a subcommand: host")
 		},
 	}
-	parent.AddCommand(&cobra.Command{
+	hostCmd := &cobra.Command{
 		Use:   "host",
 		Short: "Roll back the last host-hardening change",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -646,9 +647,11 @@ func newRollbackCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cob
 			if err != nil {
 				return err
 			}
-			return stack.RollbackHost(ctx.Config, ctx.Out, ctx.ErrOut)
+			return stack.RollbackHost(ctx.Config, dryRun, ctx.Out, ctx.ErrOut)
 		},
-	})
+	}
+	hostCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the host rollback plan without executing it")
+	parent.AddCommand(hostCmd)
 	return parent
 }
 

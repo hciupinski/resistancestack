@@ -60,7 +60,7 @@ func TestConfigBackedCommandsAcceptEnvFlag(t *testing.T) {
 		},
 		{
 			name: "rollback host",
-			args: []string{"rollback", "host", "--config", configPath, "--env", "prod"},
+			args: []string{"rollback", "host", "--config", configPath, "--env", "prod", "--dry-run"},
 		},
 	}
 
