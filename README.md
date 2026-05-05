@@ -158,6 +158,14 @@ resistack deploy-user check
 By default, `deploy-user bootstrap` connects as `server.ssh_user`, bootstraps the preferred future SSH user from `host_hardening.ssh_hardening.allow_users`, and installs the public key that matches `server.private_key_path`.
 If you still connect as `root`, keep `server.ssh_user: root`, declare the future user in `allow_users`, run the bootstrap command, then switch `server.ssh_user` to that named account after verification.
 
+`host_hardening.sudo_mode` controls what sudo profile bootstrap prepares:
+
+- `limited` writes a ResistanceStack-managed command allowlist and validates it with `visudo -cf`.
+- `manual` prints sudoers instructions but does not modify `/etc/sudoers.d`.
+- `full` grants `NOPASSWD:ALL` and requires `resistack deploy-user bootstrap --accept-sudo-all-risk`.
+
+Use `resistack deploy-user bootstrap --dry-run` to review the risk profile and generated script before changing the host.
+
 ### 3. Detect Current State
 
 ```bash

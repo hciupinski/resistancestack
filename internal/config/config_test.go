@@ -159,6 +159,9 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
 		t.Fatal("expected inline comment for operator_access_mode")
 	}
+	if !strings.Contains(text, "sudo_mode: limited # Passwordless sudo profile for deploy-user bootstrap. Options: limited, full, manual.") {
+		t.Fatal("expected inline comment for sudo_mode")
+	}
 	if !strings.Contains(text, "auto_issue: false # Automatically issue a missing or expired Let's Encrypt certificate during host hardening.") {
 		t.Fatal("expected inline comment for ssl_certificates.auto_issue")
 	}

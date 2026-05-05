@@ -90,6 +90,9 @@ func TestBuildRollbackScript_RestoresLastBackup(t *testing.T) {
 	if !strings.Contains(script, "restart_ssh_service()") {
 		t.Fatal("expected rollback script to reuse SSH restart fallback helper")
 	}
+	if !strings.Contains(script, "sudo find /etc/sudoers.d -maxdepth 1 -type f -name 'resistack-*' -exec rm -f {} +") {
+		t.Fatal("expected rollback script to remove ResistanceStack-managed sudoers snippets")
+	}
 }
 
 func TestBuildApplyScript_IncludesManagedSSLCertWorkflow(t *testing.T) {

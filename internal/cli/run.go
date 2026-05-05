@@ -516,13 +516,14 @@ func newDeployUserCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *c
 	var connectAs string
 	var publicKeyPath string
 	var dryRun bool
+	var acceptSudoAllRisk bool
 	addDeployFlags := func(cmd *cobra.Command) {
 		cmd.Flags().StringVar(&user, "user", "", "Deploy user to check or bootstrap")
 		cmd.Flags().StringVar(&connectAs, "connect-as", "", "SSH user used to connect before bootstrapping")
 		cmd.Flags().StringVar(&publicKeyPath, "public-key-path", "", "Public key path to install or verify")
 	}
 	optsForRun := func() deployuser.Options {
-		return deployuser.Options{User: user, ConnectAs: connectAs, PublicKeyPath: publicKeyPath}
+		return deployuser.Options{User: user, ConnectAs: connectAs, PublicKeyPath: publicKeyPath, AcceptSudoAllRisk: acceptSudoAllRisk}
 	}
 
 	checkCmd := &cobra.Command{
@@ -551,6 +552,7 @@ func newDeployUserCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *c
 	}
 	addDeployFlags(bootstrapCmd)
 	bootstrapCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the bootstrap script without executing it")
+	bootstrapCmd.Flags().BoolVar(&acceptSudoAllRisk, "accept-sudo-all-risk", false, "Allow sudo_mode=full to grant NOPASSWD:ALL")
 
 	parent.AddCommand(checkCmd, bootstrapCmd)
 	return parent

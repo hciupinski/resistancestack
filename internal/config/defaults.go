@@ -15,7 +15,8 @@ func Default(projectName string) Config {
 			KnownHostsPath:  "~/.ssh/known_hosts",
 		},
 		HostHardening: HostHardeningConfig{
-			Enabled: true,
+			Enabled:  true,
+			SudoMode: SudoModeLimited,
 			SSHHardening: SSHHardeningConfig{
 				DisableRootLogin:        true,
 				DisablePasswordAuth:     true,

@@ -104,10 +104,8 @@ require_privileged_access() {
     return 0
   fi
   echo "[resistack] passwordless sudo is required for host hardening" >&2
-  echo "[resistack] configure it for user %s, for example:" >&2
-  echo "[resistack]   echo '%s ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/resistack-%s" >&2
-  echo "[resistack]   sudo chmod 440 /etc/sudoers.d/resistack-%s" >&2
-  echo "[resistack] then verify: sudo -n true && echo OK" >&2
+  echo "[resistack] run: resistack deploy-user bootstrap --dry-run" >&2
+  echo "[resistack] then bootstrap with host_hardening.sudo_mode=%s and verify with: resistack deploy-user check" >&2
   exit 1
 }
 
@@ -768,10 +766,7 @@ echo "[resistack] host hardening applied"
 		scriptutil.ShellQuote(primaryDomain),
 		scriptutil.ShellQuote(cfg.HostHardening.SSLCertificates.Email),
 		scriptutil.ShellQuote(boolString(cfg.HostHardening.SSLCertificates.Staging)),
-		cfg.Server.SSHUser,
-		cfg.Server.SSHUser,
-		cfg.Server.SSHUser,
-		cfg.Server.SSHUser,
+		cfg.HostHardening.SudoMode,
 		strings.Join(packageList, " "),
 		yesNo(!cfg.HostHardening.SSHHardening.DisableRootLogin, "prohibit-password", "no"),
 		yesNo(!cfg.HostHardening.SSHHardening.DisablePasswordAuth, "yes", "no"),
@@ -812,6 +807,9 @@ while IFS= read -r original; do
     sudo cp -a "${backup}" "${original}"
   fi
 done < "${latest}/manifest.txt"
+
+sudo find /etc/sudoers.d -maxdepth 1 -type f -name 'resistack-*' -exec rm -f {} + 2>/dev/null || true
+echo "[resistack] removed ResistanceStack-managed sudoers snippets"
 
 restart_ssh_service() {
   sudo systemctl restart ssh >/dev/null 2>&1 || \

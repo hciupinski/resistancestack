@@ -61,7 +61,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			Description:    "The configured SSH user does not have passwordless sudo.",
 			DetectedValue:  cfg.Server.SSHUser,
 			Risk:           "Host hardening cannot safely apply SSH, UFW, fail2ban, or package changes without non-interactive privilege escalation.",
-			Recommendation: fmt.Sprintf("Grant passwordless sudo to `%s`, for example: `echo '%s ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/resistack-%s && sudo chmod 440 /etc/sudoers.d/resistack-%s`, then verify with `ssh %s@%s 'sudo -n true && echo OK'`.", cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.SSHUser, cfg.Server.Host),
+			Recommendation: fmt.Sprintf("Run `resistack deploy-user bootstrap --dry-run` to review the sudo risk profile, then bootstrap `host_hardening.sudo_mode=%s` and verify with `resistack deploy-user check`.", cfg.HostHardening.SudoMode),
 			AutoRemediable: false,
 		})
 	}

@@ -12,6 +12,7 @@ var defaultLineComments = map[string]string{
 	"server.host_key_checking": "SSH host key policy. Options: strict, accept-new.",
 	"server.known_hosts_path":  "Known hosts file used when strict checking is enabled.",
 	"host_hardening.enabled":   "Enable baseline host hardening.",
+	"host_hardening.sudo_mode": "Passwordless sudo profile for deploy-user bootstrap. Options: limited, full, manual.",
 	"host_hardening.ssh_hardening.disable_root_login":        "Disable direct SSH login for root.",
 	"host_hardening.ssh_hardening.disable_password_auth":     "Require key-based SSH authentication.",
 	"host_hardening.ssh_hardening.allow_users[]":             "User explicitly allowed to log in via SSH.",

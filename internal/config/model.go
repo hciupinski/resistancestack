@@ -22,6 +22,9 @@ const (
 	SeverityNotChecked               = "not_checked"
 	OperatorAccessModePublicHardened = "public_hardened"
 	OperatorAccessModeAllowlistOnly  = "allowlist_only"
+	SudoModeLimited                  = "limited"
+	SudoModeFull                     = "full"
+	SudoModeManual                   = "manual"
 )
 
 type Config struct {
@@ -56,6 +59,7 @@ type ServerConfig struct {
 
 type HostHardeningConfig struct {
 	Enabled                  bool                  `yaml:"enabled"`
+	SudoMode                 string                `yaml:"sudo_mode"`
 	SSHHardening             SSHHardeningConfig    `yaml:"ssh_hardening"`
 	UFWPolicy                UFWPolicyConfig       `yaml:"ufw_policy"`
 	Fail2ban                 Fail2banConfig        `yaml:"fail2ban"`
