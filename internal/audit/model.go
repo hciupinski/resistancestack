@@ -25,8 +25,9 @@ type Remediation struct {
 }
 
 type Summary struct {
-	BySeverity  map[string]int `json:"by_severity"`
-	TopSeverity string         `json:"top_severity"`
+	BySeverity    map[string]int `json:"by_severity"`
+	TopSeverity   string         `json:"top_severity"`
+	SecurityScore int            `json:"security_score"`
 }
 
 type Report struct {

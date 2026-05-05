@@ -99,7 +99,7 @@ ci:
 
 reporting:
   output_path: "./.resistack/reports" # Directory for generated reports.
-  format: "text" # Report output format.
+  format: "text" # Report output format: text, json, or html.
   minimum_severity: "low" # Lowest severity included in reports.
 
 alerts:

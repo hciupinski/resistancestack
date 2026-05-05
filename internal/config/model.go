@@ -14,6 +14,7 @@ const (
 	RepoVisibilityInternal           = "internal"
 	FormatText                       = "text"
 	FormatJSON                       = "json"
+	FormatHTML                       = "html"
 	SeverityLow                      = "low"
 	SeverityMedium                   = "medium"
 	SeverityHigh                     = "high"

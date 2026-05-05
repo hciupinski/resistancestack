@@ -55,6 +55,16 @@ func TestCheck_InvalidHealthcheckURLReturnsError(t *testing.T) {
 	}
 }
 
+func TestCheck_HTMLReportingFormatIsValid(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Reporting.Format = config.FormatHTML
+
+	_, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected html reporting format to be valid, got %d errors", len(errs))
+	}
+}
+
 func TestCheck_InvalidSnapshotIntervalReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.Observability.SnapshotInterval = "sometimes"

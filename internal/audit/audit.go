@@ -311,6 +311,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 		}
 	}
 	summary.TopSeverity = topSeverity
+	summary.SecurityScore = SecurityScore(summary)
 
 	return Report{
 		GeneratedAt: time.Now().UTC(),
@@ -319,6 +320,24 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 		Findings:    findings,
 		Remediation: buildRemediation(findings),
 	}
+}
+
+func SecurityScore(summary Summary) int {
+	score := 100
+	penalties := map[string]int{
+		config.SeverityCritical:   30,
+		config.SeverityHigh:       15,
+		config.SeverityMedium:     7,
+		config.SeverityLow:        2,
+		config.SeverityNotChecked: 5,
+	}
+	for severity, penalty := range penalties {
+		score -= summary.BySeverity[severity] * penalty
+	}
+	if score < 0 {
+		return 0
+	}
+	return score
 }
 
 func buildRemediation(findings []Finding) []Remediation {

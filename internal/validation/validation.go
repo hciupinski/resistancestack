@@ -188,9 +188,9 @@ func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs 
 	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Reporting.Format)) {
-	case config.FormatText, config.FormatJSON:
+	case config.FormatText, config.FormatJSON, config.FormatHTML:
 	default:
-		errs = append(errs, fmt.Errorf("reporting.format must be one of: %s, %s", config.FormatText, config.FormatJSON))
+		errs = append(errs, fmt.Errorf("reporting.format must be one of: %s, %s, %s", config.FormatText, config.FormatJSON, config.FormatHTML))
 	}
 	if severityRank[strings.ToLower(strings.TrimSpace(cfg.Reporting.MinimumSeverity))] == 0 {
 		errs = append(errs, fmt.Errorf("reporting.minimum_severity must be one of: low, medium, high, critical"))

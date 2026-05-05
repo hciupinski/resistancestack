@@ -27,6 +27,9 @@ func TestEvaluate_FindsHostAndCIRisks(t *testing.T) {
 	if report.Summary.TopSeverity != config.SeverityHigh {
 		t.Fatalf("expected top severity high, got %s", report.Summary.TopSeverity)
 	}
+	if report.Summary.SecurityScore < 0 || report.Summary.SecurityScore > 100 {
+		t.Fatalf("expected security score in 0-100 range, got %d", report.Summary.SecurityScore)
+	}
 }
 
 func TestEvaluate_LocalSnapshotReportsNotCheckedInsteadOfHostFindings(t *testing.T) {
@@ -70,6 +73,26 @@ func TestEvaluate_LocalSnapshotReportsNotCheckedInsteadOfHostFindings(t *testing
 	}
 	if report.Summary.BySeverity[config.SeverityNotChecked] != 2 {
 		t.Fatalf("expected two not_checked findings, got %d", report.Summary.BySeverity[config.SeverityNotChecked])
+	}
+}
+
+func TestSecurityScore_WeightsFindingsAndCapsAtZero(t *testing.T) {
+	score := SecurityScore(Summary{BySeverity: map[string]int{
+		config.SeverityCritical:   1,
+		config.SeverityHigh:       1,
+		config.SeverityMedium:     1,
+		config.SeverityLow:        1,
+		config.SeverityNotChecked: 1,
+	}})
+	if score != 41 {
+		t.Fatalf("unexpected score %d", score)
+	}
+
+	score = SecurityScore(Summary{BySeverity: map[string]int{
+		config.SeverityCritical: 4,
+	}})
+	if score != 0 {
+		t.Fatalf("expected score to be capped at zero, got %d", score)
 	}
 }
 
