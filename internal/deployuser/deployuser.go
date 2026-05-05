@@ -105,7 +105,7 @@ func validUserName(value string) bool {
 		if !valid {
 			return false
 		}
-		if i == 0 && !(r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+		if i == 0 && r != '_' && (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
 			return false
 		}
 	}
