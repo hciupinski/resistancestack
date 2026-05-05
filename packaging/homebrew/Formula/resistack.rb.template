@@ -1,7 +1,7 @@
 class Resistack < Formula
   desc "Baseline security platform for VPS hosts and CI pipelines"
   homepage "https://github.com/hciupinski/resistancestack"
-  url "https://github.com/hciupinski/resistancestack/archive/refs/tags/v0.1.0.tar.gz"
+  url "https://github.com/hciupinski/resistancestack/archive/refs/tags/v0.1.1.tar.gz"
   sha256 "REPLACE_WITH_SHA256"
   license "MIT"
 

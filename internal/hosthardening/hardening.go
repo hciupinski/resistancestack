@@ -8,6 +8,7 @@ import (
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/scriptutil"
+	"github.com/hciupinski/resistancestack/internal/version"
 )
 
 func BuildApplyScript(cfg config.Config) string {
@@ -805,7 +806,7 @@ sudo -n -l >/dev/null
 
 echo "[resistack] host hardening applied"
 `, scriptutil.ShellQuote(cfg.HostHardening.BackupDir),
-		scriptutil.ShellQuote("dev"),
+		scriptutil.ShellQuote(version.Current()),
 		cfg.Server.SSHPort,
 		scriptutil.ShellQuote(cfg.Server.SSHUser),
 		scriptutil.ShellQuote(allowUsers),

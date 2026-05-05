@@ -83,7 +83,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 			ID:             "host.ssh.root-login",
 			Module:         "host-hardening",
 			Severity:       config.SeverityHigh,
-			Description:    "Root appears as an interactive SSH user while v2 baseline expects root login to be disabled.",
+			Description:    "Root appears as an interactive SSH user while the baseline expects root login to be disabled.",
 			DetectedValue:  "root",
 			Risk:           "Interactive root SSH access raises blast radius and weakens operator accountability.",
 			Recommendation: "Apply SSH hardening and verify that privileged access flows through named sudo users.",

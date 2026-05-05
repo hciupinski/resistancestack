@@ -83,8 +83,9 @@ After the release PR is merged into `main`:
 git fetch origin
 git checkout main
 git pull origin main
-git tag v0.1.0
-git push origin v0.1.0
+VERSION="v$(cat VERSION)"
+git tag "${VERSION}"
+git push origin "${VERSION}"
 ```
 
 The tag triggers:
@@ -212,8 +213,9 @@ If the GitHub Release succeeded but the tap update failed:
 3. Prefer creating a patch tag:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+VERSION="v$(cat VERSION)"
+git tag "${VERSION}"
+git push origin "${VERSION}"
 ```
 
 Avoid force-moving public tags once users may have installed them.

@@ -16,6 +16,7 @@ import (
 	"github.com/hciupinski/resistancestack/internal/observability"
 	"github.com/hciupinski/resistancestack/internal/stack"
 	"github.com/hciupinski/resistancestack/internal/validation"
+	"github.com/hciupinski/resistancestack/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -29,8 +30,6 @@ const (
 )
 
 var errNotImplemented = errors.New("not implemented")
-
-var Version = "dev"
 
 type rootOptions struct {
 	configPath     string
@@ -60,8 +59,8 @@ func NewRootCommand(out io.Writer, errOut io.Writer) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "resistack",
-		Short:         "ResistanceStack v2 CLI",
-		Version:       Version,
+		Short:         "ResistanceStack CLI",
+		Version:       version.Current(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -416,7 +415,7 @@ func newDoctorCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra
 			if err != nil {
 				return err
 			}
-			report, err := stack.Doctor(ctx.Config, ctx.Root, doctor.Options{Mode: mode, Version: Version}, ctx.Out)
+			report, err := stack.Doctor(ctx.Config, ctx.Root, doctor.Options{Mode: mode, Version: version.Current()}, ctx.Out)
 			if err != nil {
 				return err
 			}
