@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/hciupinski/resistancestack/internal/config"
@@ -13,6 +15,7 @@ import (
 	"github.com/hciupinski/resistancestack/internal/doctor"
 	"github.com/hciupinski/resistancestack/internal/observability"
 	"github.com/hciupinski/resistancestack/internal/stack"
+	"github.com/hciupinski/resistancestack/internal/validation"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -91,7 +94,7 @@ func NewRootCommand(out io.Writer, errOut io.Writer) *cobra.Command {
 
 	root.AddCommand(
 		newInitCommand(&opts, out),
-		newWizardCommand(),
+		newWizardCommand(&opts, out, errOut),
 		newDoctorCommand(&opts, out, errOut),
 		newInventoryCommand(&opts, out, errOut),
 		newAuditCommand(&opts, out, errOut),
@@ -146,14 +149,226 @@ func newInitCommand(opts *rootOptions, out io.Writer) *cobra.Command {
 	return cmd
 }
 
-func newWizardCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "wizard",
+func newWizardCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "wizard [project-name]",
 		Short: "Interactively create a ResistanceStack configuration",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("wizard command: %w; planned for MVP-04", errNotImplemented)
+			if opts.nonInteractive {
+				return fmt.Errorf("wizard requires interactive input; remove --non-interactive or use init")
+			}
+			projectName := ""
+			if len(args) > 0 {
+				projectName = strings.TrimSpace(args[0])
+			}
+			if projectName == "" {
+				wd, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("resolve working directory: %w", err)
+				}
+				projectName = filepath.Base(wd)
+			}
+			if !force {
+				if _, err := os.Stat(opts.configPath); err == nil {
+					return fmt.Errorf("%s already exists; use --force to overwrite it", opts.configPath)
+				} else if !os.IsNotExist(err) {
+					return fmt.Errorf("stat %s: %w", opts.configPath, err)
+				}
+			}
+
+			cfg, err := runConfigWizard(cmd.InOrStdin(), out, projectName)
+			if err != nil {
+				return err
+			}
+			warnings, errs := validation.Check(cfg)
+			for _, warning := range warnings {
+				fmt.Fprintf(errOut, "warning: %s\n", warning)
+			}
+			writeValidationErrors(errOut, errs)
+			if len(errs) > 0 {
+				return invalidConfigError(errs)
+			}
+			doc, err := config.Document(cfg)
+			if err != nil {
+				return err
+			}
+			if err := config.SaveDocument(opts.configPath, doc); err != nil {
+				return err
+			}
+			fmt.Fprintf(out, "Created %s for security baseline project %q\n", opts.configPath, cfg.ProjectName)
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing configuration file")
+	return cmd
+}
+
+func runConfigWizard(in io.Reader, out io.Writer, projectName string) (config.Config, error) {
+	cfg := config.Default(projectName)
+	reader := bufio.NewReader(in)
+
+	fmt.Fprintln(out, "ResistanceStack configuration wizard")
+	fmt.Fprintln(out, "Press Enter to accept the value shown in brackets.")
+
+	var err error
+	cfg.ProjectName, err = promptString(reader, out, "Project name", cfg.ProjectName)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Server.Host, err = promptString(reader, out, "Server host or IP", cfg.Server.Host)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Server.SSHUser, err = promptString(reader, out, "SSH user", cfg.Server.SSHUser)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Server.SSHPort, err = promptInt(reader, out, "SSH port", cfg.Server.SSHPort)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Server.PrivateKeyPath, err = promptString(reader, out, "Private key path", cfg.Server.PrivateKeyPath)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Server.HostKeyChecking, err = promptChoice(reader, out, "Host key checking", cfg.Server.HostKeyChecking, []string{"strict", "accept-new"})
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.AppInventory.Domains, err = promptCSV(reader, out, "Application domains", cfg.AppInventory.Domains)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.AppInventory.HealthcheckURLs, err = promptCSV(reader, out, "Healthcheck URLs", cfg.AppInventory.HealthcheckURLs)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.HostHardening.SSHHardening.AllowUsers, err = promptCSV(reader, out, "SSH allow users", []string{cfg.Server.SSHUser})
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.HostHardening.UFWPolicy.AdminAllowlist, err = promptCSV(reader, out, "Admin CIDR allowlist", cfg.HostHardening.UFWPolicy.AdminAllowlist)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.HostHardening.SSLCertificates.Email, err = promptString(reader, out, "Let's Encrypt email", cfg.HostHardening.SSLCertificates.Email)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.HostHardening.SSLCertificates.AutoIssue, err = promptBool(reader, out, "Auto-issue Let's Encrypt certificates", cfg.HostHardening.SSLCertificates.AutoIssue)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.Observability.Enable, err = promptBool(reader, out, "Enable observability baseline", cfg.Observability.Enable)
+	if err != nil {
+		return config.Config{}, err
+	}
+	cfg.CI.GenerateWorkflows, err = promptBool(reader, out, "Generate GitHub security workflows", cfg.CI.GenerateWorkflows)
+	if err != nil {
+		return config.Config{}, err
+	}
+
+	return cfg, nil
+}
+
+func promptString(reader *bufio.Reader, out io.Writer, label string, def string) (string, error) {
+	fmt.Fprintf(out, "%s [%s]: ", label, def)
+	value, err := readPromptLine(reader)
+	if err != nil {
+		return "", err
+	}
+	if value == "" {
+		return def, nil
+	}
+	return value, nil
+}
+
+func promptChoice(reader *bufio.Reader, out io.Writer, label string, def string, allowed []string) (string, error) {
+	for {
+		value, err := promptString(reader, out, label, def)
+		if err != nil {
+			return "", err
+		}
+		for _, candidate := range allowed {
+			if strings.EqualFold(value, candidate) {
+				return strings.ToLower(candidate), nil
+			}
+		}
+		fmt.Fprintf(out, "Choose one of: %s\n", strings.Join(allowed, ", "))
+	}
+}
+
+func promptInt(reader *bufio.Reader, out io.Writer, label string, def int) (int, error) {
+	for {
+		fmt.Fprintf(out, "%s [%d]: ", label, def)
+		value, err := readPromptLine(reader)
+		if err != nil {
+			return 0, err
+		}
+		if value == "" {
+			return def, nil
+		}
+		parsed, err := strconv.Atoi(value)
+		if err == nil {
+			return parsed, nil
+		}
+		fmt.Fprintln(out, "Enter a whole number.")
+	}
+}
+
+func promptBool(reader *bufio.Reader, out io.Writer, label string, def bool) (bool, error) {
+	defaultLabel := "n"
+	if def {
+		defaultLabel = "y"
+	}
+	for {
+		fmt.Fprintf(out, "%s [%s]: ", label, defaultLabel)
+		value, err := readPromptLine(reader)
+		if err != nil {
+			return false, err
+		}
+		switch strings.ToLower(value) {
+		case "":
+			return def, nil
+		case "y", "yes", "true", "1":
+			return true, nil
+		case "n", "no", "false", "0":
+			return false, nil
+		default:
+			fmt.Fprintln(out, "Enter y or n.")
+		}
+	}
+}
+
+func promptCSV(reader *bufio.Reader, out io.Writer, label string, def []string) ([]string, error) {
+	defaultValue := strings.Join(def, ", ")
+	fmt.Fprintf(out, "%s [%s]: ", label, defaultValue)
+	value, err := readPromptLine(reader)
+	if err != nil {
+		return nil, err
+	}
+	if value == "" {
+		return append([]string{}, def...), nil
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result, nil
+}
+
+func readPromptLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read wizard input: %w", err)
+	}
+	return strings.TrimSpace(line), nil
 }
 
 func newDoctorCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra.Command {

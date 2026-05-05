@@ -66,15 +66,18 @@ func EnsureDefaultConfig(path string, projectName string, overwrite bool) (InitR
 }
 
 func DefaultDocument(projectName string) (*yaml.Node, error) {
-	cfg := Default(projectName)
+	return Document(Default(projectName))
+}
+
+func Document(cfg Config) (*yaml.Node, error) {
 	raw, err := yaml.Marshal(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("marshal default config: %w", err)
+		return nil, fmt.Errorf("marshal config: %w", err)
 	}
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("decode default config node: %w", err)
+		return nil, fmt.Errorf("decode config node: %w", err)
 	}
 	annotateDefaultComments(&doc)
 	return &doc, nil
