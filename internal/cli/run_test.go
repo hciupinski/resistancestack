@@ -171,6 +171,43 @@ func TestRun_AuditLocalWritesReportWithNotCheckedFindings(t *testing.T) {
 	}
 }
 
+func TestRun_AuditLocalOutputHTMLWritesHTMLReport(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"audit", "--local", "--output", "html"}, &out, &errOut); err != nil {
+		t.Fatalf("audit --local --output html: %v; stderr=%s", err, errOut.String())
+	}
+
+	reportPath := filepath.Join(root, ".resistack", "reports", "audit-report.html")
+	raw, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("expected html audit report to be written: %v", err)
+	}
+	text := string(raw)
+	for _, want := range []string{"<!doctype html>", "Security score", "Checked Areas", "Not Checked"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected html report to contain %q, got %s", want, text)
+		}
+	}
+	if got := out.String(); !strings.Contains(got, "Saved audit report to ") || !strings.Contains(got, "audit-report.html") {
+		t.Fatalf("expected saved report path in output, got %q", got)
+	}
+}
+
 func TestRun_DoctorLocalWritesReportAndReturnsFailures(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "resistack.yaml")

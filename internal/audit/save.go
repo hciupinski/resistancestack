@@ -21,13 +21,17 @@ func Save(root string, cfg config.Config, report Report) (string, error) {
 	format := strings.ToLower(strings.TrimSpace(cfg.Reporting.Format))
 	name := "audit-report.txt"
 	content := []byte(FormatText(report))
-	if format == config.FormatJSON {
+	switch format {
+	case config.FormatJSON:
 		name = "audit-report.json"
 		raw, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			return "", fmt.Errorf("marshal audit report: %w", err)
 		}
 		content = raw
+	case config.FormatHTML:
+		name = "audit-report.html"
+		content = []byte(FormatHTML(report))
 	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, content, 0o644); err != nil {

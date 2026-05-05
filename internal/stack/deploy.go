@@ -60,7 +60,7 @@ func Audit(cfg config.Config, root string, dryRun bool, out io.Writer) (audit.Re
 	if err != nil {
 		return audit.Report{}, err
 	}
-	fmt.Fprintln(out, audit.FormatText(report))
+	printAuditReport(out, cfg, report)
 	fmt.Fprintf(out, "Saved audit report to %s\n", reportPath)
 	return report, nil
 }
@@ -78,9 +78,20 @@ func AuditLocal(cfg config.Config, root string, dryRun bool, out io.Writer) (aud
 	if err != nil {
 		return audit.Report{}, err
 	}
-	fmt.Fprintln(out, audit.FormatText(report))
+	printAuditReport(out, cfg, report)
 	fmt.Fprintf(out, "Saved audit report to %s\n", reportPath)
 	return report, nil
+}
+
+func printAuditReport(out io.Writer, cfg config.Config, report audit.Report) {
+	if cfg.Reporting.Format == config.FormatHTML {
+		fmt.Fprintf(out, "Audit generated at: %s\n", report.GeneratedAt.Format("2006-01-02T15:04:05Z07:00"))
+		fmt.Fprintf(out, "Top severity: %s\n", report.Summary.TopSeverity)
+		fmt.Fprintf(out, "Security score: %d/100\n", report.Summary.SecurityScore)
+		fmt.Fprintf(out, "Findings: %d\n\n", len(report.Findings))
+		return
+	}
+	fmt.Fprintln(out, audit.FormatText(report))
 }
 
 func Doctor(cfg config.Config, root string, opts doctor.Options, out io.Writer) (doctor.Report, error) {

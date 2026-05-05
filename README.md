@@ -170,6 +170,7 @@ Use this before changing anything. It shows what is already running and what the
 
 ```bash
 resistack audit
+resistack audit --output html
 ```
 
 The audit produces findings with:
@@ -181,6 +182,8 @@ The audit produces findings with:
 - whether the issue can be remediated automatically
 
 Reports are written to `reporting.output_path`.
+Text, JSON, and self-contained HTML reports are supported through `reporting.format` or `--output`.
+The HTML report includes a 0-100 security score, checked-area status, severity summary, findings, a remediation plan, and not-checked areas.
 
 If the configured `server.ssh_user` does not have passwordless sudo, the audit will report it explicitly and show the exact `sudoers` command to run before host hardening.
 If `host_hardening.ssl_certificates.enabled=true`, the audit also checks only the first entry in `app_inventory.domains` and expects a valid local certificate for that primary domain.

@@ -67,7 +67,7 @@ var defaultLineComments = map[string]string{
 	"ci.scans.license":                                       "Enable license inventory checks in CI.",
 	"ci.scans.osv":                                           "Enable OSV-based vulnerability scanning.",
 	"reporting.output_path":                                  "Directory used to store generated reports.",
-	"reporting.format":                                       "Report format. Options: text, json.",
+	"reporting.format":                                       "Report format. Options: text, json, html.",
 	"reporting.minimum_severity":                             "Lowest severity included in generated reports. Options: low, medium, high, critical.",
 	"alerts.webhook_url":                                     "Webhook endpoint for alert delivery.",
 	"alerts.email":                                           "Email target used for alert routing metadata.",
