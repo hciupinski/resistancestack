@@ -25,6 +25,7 @@ func Evaluate(cfg config.Config, snapshot inventory.Snapshot) Report {
 	futureSSHUsers := config.FutureSSHLoginUsers(cfg)
 	hostChecked := snapshot.Areas.Host.Status != inventory.AreaStatusNotChecked
 	cloudExternalChecked := snapshot.Areas.CloudExternal.Status != inventory.AreaStatusNotChecked
+	addProfileFindings(cfg, snapshot, hostChecked, add)
 
 	if !hostChecked {
 		reason := strings.TrimSpace(snapshot.Areas.Host.Reason)
@@ -338,6 +339,99 @@ func SecurityScore(summary Summary) int {
 		return 0
 	}
 	return score
+}
+
+func addProfileFindings(cfg config.Config, snapshot inventory.Snapshot, hostChecked bool, add func(Finding)) {
+	profile := cfg.EffectiveDeploymentProfile()
+	checkedAreas := profileCheckedAreas(profile, hostChecked)
+	switch profile {
+	case config.DeploymentProfileVPSNginx:
+		if hostChecked && snapshot.Proxy.Kind != "" && snapshot.Proxy.Kind != "nginx" {
+			add(Finding{
+				ID:             "deployment.vps-nginx.proxy-mismatch",
+				Module:         "inventory-audit",
+				Severity:       config.SeverityMedium,
+				Description:    "The vps-nginx profile expects Nginx ingress, but inventory detected a different proxy state.",
+				DetectedValue:  fmt.Sprintf("profile=%s proxy=%s checked=%s", profile, emptyAsUnknown(snapshot.Proxy.Kind), checkedAreas),
+				Risk:           "Nginx-specific hardening and log assumptions may not match this host.",
+				Recommendation: "Switch `deployment.profile` to the actual ingress model or add Nginx inventory hints under `app_inventory.nginx_paths`.",
+				AutoRemediable: false,
+			})
+		}
+	case config.DeploymentProfileDockerCompose:
+		if len(snapshot.Repo.ComposeFiles) == 0 && len(snapshot.Runtime.ComposeFiles) == 0 && len(cfg.AppInventory.ComposePaths) == 0 {
+			add(Finding{
+				ID:             "deployment.docker-compose.compose-missing",
+				Module:         "inventory-audit",
+				Severity:       config.SeverityMedium,
+				Description:    "The docker-compose profile is selected, but no Compose file hints or detected Compose files are available.",
+				DetectedValue:  fmt.Sprintf("profile=%s checked=%s", profile, checkedAreas),
+				Risk:           "Container inventory, CI image scanning, and remediation planning may miss the application runtime.",
+				Recommendation: "Add Compose paths to `app_inventory.compose_paths` or keep a Compose file in the repository root.",
+				AutoRemediable: false,
+			})
+		}
+	case config.DeploymentProfileReverseProxy:
+		if hostChecked && (snapshot.Proxy.Kind == "" || snapshot.Proxy.Kind == "none") {
+			add(Finding{
+				ID:             "deployment.reverse-proxy.not-detected",
+				Module:         "inventory-audit",
+				Severity:       config.SeverityMedium,
+				Description:    "The reverse-proxy profile is selected, but no active reverse proxy was detected.",
+				DetectedValue:  fmt.Sprintf("profile=%s proxy=%s checked=%s", profile, emptyAsUnknown(snapshot.Proxy.Kind), checkedAreas),
+				Risk:           "Ingress, TLS termination, and access logging may be external or invisible to the audit.",
+				Recommendation: "Add proxy config paths to `app_inventory.nginx_paths` or use a more specific profile such as `vps-nginx` or `docker-compose`.",
+				AutoRemediable: false,
+			})
+		}
+	case config.DeploymentProfileNode:
+		if len(snapshot.Repo.TechProfile.NodeProjects) == 0 {
+			add(Finding{
+				ID:             "deployment.node.project-missing",
+				Module:         "inventory-audit",
+				Severity:       config.SeverityLow,
+				Description:    "The node profile is selected, but no package.json project was detected in the repository.",
+				DetectedValue:  fmt.Sprintf("profile=%s checked=%s", profile, checkedAreas),
+				Risk:           "Dependency and build recommendations may not match the repository layout.",
+				Recommendation: "Run the audit from the application repository root or switch `deployment.profile` to the actual runtime.",
+				AutoRemediable: false,
+			})
+		}
+	case config.DeploymentProfileDotnet:
+		if len(snapshot.Repo.TechProfile.DotnetProjects) == 0 {
+			add(Finding{
+				ID:             "deployment.dotnet.project-missing",
+				Module:         "inventory-audit",
+				Severity:       config.SeverityLow,
+				Description:    "The dotnet profile is selected, but no .csproj file was detected in the repository.",
+				DetectedValue:  fmt.Sprintf("profile=%s checked=%s", profile, checkedAreas),
+				Risk:           ".NET-specific dependency and build recommendations may not match the repository layout.",
+				Recommendation: "Run the audit from the .NET repository root or switch `deployment.profile` to the actual runtime.",
+				AutoRemediable: false,
+			})
+		}
+	}
+}
+
+func profileCheckedAreas(profile string, hostChecked bool) string {
+	hostStatus := "host:not_checked"
+	if hostChecked {
+		hostStatus = "host:checked"
+	}
+	switch profile {
+	case config.DeploymentProfileNode, config.DeploymentProfileDotnet:
+		return "repo:checked," + hostStatus
+	default:
+		return "repo:checked," + hostStatus + ",cloud/external:not_checked"
+	}
+}
+
+func emptyAsUnknown(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	return value
 }
 
 func buildRemediation(findings []Finding) []Remediation {

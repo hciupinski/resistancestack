@@ -13,6 +13,8 @@ func TestLoad_NewV2Config(t *testing.T) {
 	raw := `project_name: demo
 mode:
   strategy: audit_then_apply
+deployment:
+  profile: vps-nginx
 server:
   host: 1.2.3.4
   ssh_user: deployer
@@ -107,6 +109,9 @@ alerts:
 	if cfg.Mode.Strategy != ModeAuditThenApply {
 		t.Fatalf("unexpected mode: %s", cfg.Mode.Strategy)
 	}
+	if cfg.Deployment.Profile != DeploymentProfileVPSNginx {
+		t.Fatalf("unexpected deployment profile: %s", cfg.Deployment.Profile)
+	}
 	if cfg.CI.Provider != CIProviderGitHub {
 		t.Fatalf("unexpected ci provider: %s", cfg.CI.Provider)
 	}
@@ -155,6 +160,9 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	text := string(raw)
 	if !strings.Contains(text, "strategy: audit_then_apply # Workflow mode. Options: audit_then_apply.") {
 		t.Fatal("expected inline comment for mode.strategy")
+	}
+	if !strings.Contains(text, "profile: vps-nginx # Deployment profile used by wizard and audit. Options: vps-nginx, docker-compose, reverse-proxy, node, dotnet.") {
+		t.Fatal("expected inline comment for deployment.profile")
 	}
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
 		t.Fatal("expected inline comment for operator_access_mode")

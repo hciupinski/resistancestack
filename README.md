@@ -129,6 +129,23 @@ host_hardening:
       - "198.51.100.10/32"
 ```
 
+Deployment profiles let the wizard and audit tune checks to the expected application shape:
+
+```yaml
+deployment:
+  profile: "vps-nginx"
+```
+
+Supported profiles:
+
+- `vps-nginx`: expects a VPS with Nginx ingress and host-level TLS/log visibility.
+- `docker-compose`: expects Compose files or `app_inventory.compose_paths`.
+- `reverse-proxy`: expects an active reverse proxy, but not necessarily Nginx ownership.
+- `node`: checks for Node project evidence such as `package.json`.
+- `dotnet`: checks for .NET project evidence such as `.csproj`.
+
+If the profile is omitted, ResistanceStack treats it as `vps-nginx` and continues.
+
 ### 2. Fill In Server Access
 
 At minimum, set:

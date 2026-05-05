@@ -40,6 +40,12 @@ func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs 
 		errs = append(errs, fmt.Errorf("mode.strategy must be %q", config.ModeAuditThenApply))
 	}
 
+	switch strings.ToLower(strings.TrimSpace(cfg.Deployment.Profile)) {
+	case "", config.DeploymentProfileVPSNginx, config.DeploymentProfileDockerCompose, config.DeploymentProfileReverseProxy, config.DeploymentProfileNode, config.DeploymentProfileDotnet:
+	default:
+		errs = append(errs, fmt.Errorf("deployment.profile must be one of: %s, %s, %s, %s, %s", config.DeploymentProfileVPSNginx, config.DeploymentProfileDockerCompose, config.DeploymentProfileReverseProxy, config.DeploymentProfileNode, config.DeploymentProfileDotnet))
+	}
+
 	if strings.TrimSpace(cfg.Server.Host) == "" {
 		errs = append(errs, fmt.Errorf("server.host is required"))
 	}

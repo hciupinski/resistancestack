@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hciupinski/resistancestack/internal/config"
@@ -73,6 +74,99 @@ func TestEvaluate_LocalSnapshotReportsNotCheckedInsteadOfHostFindings(t *testing
 	}
 	if report.Summary.BySeverity[config.SeverityNotChecked] != 2 {
 		t.Fatalf("expected two not_checked findings, got %d", report.Summary.BySeverity[config.SeverityNotChecked])
+	}
+}
+
+func TestEvaluate_DockerComposeProfileFindsMissingComposeEvidence(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Deployment.Profile = config.DeploymentProfileDockerCompose
+	cfg.AppInventory.ComposePaths = nil
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+		},
+		UFW:              inventory.ServiceState{Enabled: true, Status: "active"},
+		Fail2ban:         inventory.ServiceState{Enabled: true, Status: "active"},
+		PasswordlessSudo: true,
+		Observability:    inventory.ObservabilityInfo{Enabled: true, Status: "active"},
+		TLSCertificates:  []inventory.TLSCertificate{{Path: "/etc/letsencrypt/live/app.example.com/fullchain.pem", Names: []string{"app.example.com"}, Valid: true}},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "deployment.docker-compose.compose-missing" {
+			found = true
+			if !strings.Contains(finding.DetectedValue, "profile=docker-compose") {
+				t.Fatalf("expected profile in detected value, got %q", finding.DetectedValue)
+			}
+			if !strings.Contains(finding.DetectedValue, "repo:checked") {
+				t.Fatalf("expected checked areas in detected value, got %q", finding.DetectedValue)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected docker-compose profile finding")
+	}
+}
+
+func TestEvaluate_NodeProfileFindsMissingNodeProject(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Deployment.Profile = config.DeploymentProfileNode
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host: inventory.AreaStatus{Status: inventory.AreaStatusNotChecked, Reason: "local mode"},
+		},
+		Repo: inventory.RepoInfo{
+			GitHubWorkflows: []string{".github/workflows/security-dependencies.yml"},
+		},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "deployment.node.project-missing" {
+			found = true
+			if finding.Severity != config.SeverityLow {
+				t.Fatalf("expected low severity, got %s", finding.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected node profile finding")
+	}
+}
+
+func TestEvaluate_ReverseProxyProfileFindsMissingProxy(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Deployment.Profile = config.DeploymentProfileReverseProxy
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+		},
+		Proxy:            inventory.ProxyInfo{Kind: "none"},
+		UFW:              inventory.ServiceState{Enabled: true, Status: "active"},
+		Fail2ban:         inventory.ServiceState{Enabled: true, Status: "active"},
+		PasswordlessSudo: true,
+		Observability:    inventory.ObservabilityInfo{Enabled: true, Status: "active"},
+		TLSCertificates:  []inventory.TLSCertificate{{Path: "/etc/letsencrypt/live/app.example.com/fullchain.pem", Names: []string{"app.example.com"}, Valid: true}},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "deployment.reverse-proxy.not-detected" {
+			found = true
+			if !strings.Contains(finding.Recommendation, "profile") {
+				t.Fatalf("expected profile recommendation, got %q", finding.Recommendation)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected reverse-proxy profile finding")
 	}
 }
 

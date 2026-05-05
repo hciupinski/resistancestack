@@ -4,6 +4,9 @@ project_name: "myapp" # Project name used in reports and generated assets.
 mode:
   strategy: "audit_then_apply" # Workflow mode used by Resistack.
 
+deployment:
+  profile: "vps-nginx" # Deployment profile: vps-nginx, docker-compose, reverse-proxy, node, or dotnet.
+
 server:
   host: "1.2.3.4" # Target VPS hostname or IP.
   ssh_user: "deployer" # SSH user Resistack connects as.
