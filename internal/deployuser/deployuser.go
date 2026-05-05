@@ -14,10 +14,12 @@ import (
 )
 
 type Options struct {
-	User          string
-	ConnectAs     string
-	PublicKey     string
-	PublicKeyPath string
+	User              string
+	ConnectAs         string
+	PublicKey         string
+	PublicKeyPath     string
+	SudoMode          string
+	AcceptSudoAllRisk bool
 }
 
 func Check(cfg config.Config, opts Options, out io.Writer, errOut io.Writer) error {
@@ -34,8 +36,12 @@ func Bootstrap(cfg config.Config, opts Options, dryRun bool, out io.Writer, errO
 	if err != nil {
 		return err
 	}
+	if resolved.SudoMode == config.SudoModeFull && !resolved.AcceptSudoAllRisk {
+		return fmt.Errorf("host_hardening.sudo_mode=full grants NOPASSWD:ALL; pass --accept-sudo-all-risk to bootstrap with this risk")
+	}
+	fmt.Fprint(out, RiskReport(resolved))
 	if dryRun {
-		fmt.Fprintf(out, "Deploy user bootstrap plan:\n- connect as: %s\n- deploy user: %s\n- public key: %s\n", resolved.ConnectAs, resolved.User, resolved.PublicKeyPath)
+		fmt.Fprintf(out, "Deploy user bootstrap plan:\n- connect as: %s\n- deploy user: %s\n- public key: %s\n- sudo mode: %s\n", resolved.ConnectAs, resolved.User, resolved.PublicKeyPath, resolved.SudoMode)
 		fmt.Fprintln(out, "Generated deploy-user bootstrap script:")
 		fmt.Fprintln(out, BuildBootstrapScript(resolved))
 		return nil
@@ -46,8 +52,10 @@ func Bootstrap(cfg config.Config, opts Options, dryRun bool, out io.Writer, errO
 
 func ResolveOptions(cfg config.Config, opts Options) (Options, error) {
 	resolved := Options{
-		User:      strings.TrimSpace(opts.User),
-		ConnectAs: strings.TrimSpace(opts.ConnectAs),
+		User:              strings.TrimSpace(opts.User),
+		ConnectAs:         strings.TrimSpace(opts.ConnectAs),
+		SudoMode:          strings.ToLower(strings.TrimSpace(opts.SudoMode)),
+		AcceptSudoAllRisk: opts.AcceptSudoAllRisk,
 	}
 	if resolved.User == "" {
 		resolved.User = config.PreferredDeployUser(cfg)
@@ -55,14 +63,25 @@ func ResolveOptions(cfg config.Config, opts Options) (Options, error) {
 	if resolved.User == "" {
 		return Options{}, fmt.Errorf("deploy user is required")
 	}
-	if strings.ContainsAny(resolved.User, " \t\r\n") {
-		return Options{}, fmt.Errorf("deploy user %q must not contain whitespace", resolved.User)
+	if !validUserName(resolved.User) {
+		return Options{}, fmt.Errorf("deploy user %q must contain only letters, digits, '.', '_', '-' or '$' and must start with a letter or '_'", resolved.User)
 	}
 	if resolved.ConnectAs == "" {
 		resolved.ConnectAs = strings.TrimSpace(cfg.Server.SSHUser)
 	}
 	if resolved.ConnectAs == "" {
 		return Options{}, fmt.Errorf("connection user is required")
+	}
+	if resolved.SudoMode == "" {
+		resolved.SudoMode = strings.ToLower(strings.TrimSpace(cfg.HostHardening.SudoMode))
+	}
+	if resolved.SudoMode == "" {
+		resolved.SudoMode = config.SudoModeLimited
+	}
+	switch resolved.SudoMode {
+	case config.SudoModeLimited, config.SudoModeFull, config.SudoModeManual:
+	default:
+		return Options{}, fmt.Errorf("sudo mode must be one of: %s, %s, %s", config.SudoModeLimited, config.SudoModeFull, config.SudoModeManual)
 	}
 
 	publicKeyPath, publicKey, err := loadPublicKey(cfg, opts.PublicKeyPath)
@@ -72,6 +91,57 @@ func ResolveOptions(cfg config.Config, opts Options) (Options, error) {
 	resolved.PublicKeyPath = publicKeyPath
 	resolved.PublicKey = publicKey
 	return resolved, nil
+}
+
+func validUserName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i, r := range value {
+		valid := r == '_' || r == '-' || r == '$' || r == '.' ||
+			(r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9')
+		if !valid {
+			return false
+		}
+		if i == 0 && !(r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+			return false
+		}
+	}
+	return true
+}
+
+func RiskReport(opts Options) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Deploy user sudo risk profile: %s\n", opts.SudoMode)
+	switch opts.SudoMode {
+	case config.SudoModeFull:
+		b.WriteString("- grants NOPASSWD:ALL to the deploy user\n")
+		b.WriteString("- equivalent to passwordless root escalation for that account\n")
+		b.WriteString("- requires explicit --accept-sudo-all-risk before execution\n")
+	case config.SudoModeManual:
+		b.WriteString("- does not modify /etc/sudoers.d\n")
+		b.WriteString("- prints manual sudoers instructions for operator review\n")
+		b.WriteString("- deploy-user check will fail until sudoers is configured manually\n")
+	default:
+		b.WriteString("- writes a ResistanceStack-managed sudoers profile with a command allowlist\n")
+		b.WriteString("- validates the sudoers file with visudo before completing\n")
+		b.WriteString("- avoids broad NOPASSWD:ALL while preparing a limited-sudo path\n")
+	}
+	return b.String()
+}
+
+func sudoersContent(opts Options) string {
+	switch opts.SudoMode {
+	case config.SudoModeFull:
+		return fmt.Sprintf(`# Managed by ResistanceStack deploy-user bootstrap.
+%s ALL=(ALL) NOPASSWD:ALL`, opts.User)
+	default:
+		return fmt.Sprintf(`# Managed by ResistanceStack deploy-user bootstrap.
+Cmnd_Alias RESISTACK_DEPLOY = /usr/bin/apt-get, /usr/bin/cat, /usr/bin/chmod, /usr/bin/cp, /usr/bin/find, /usr/bin/grep, /usr/bin/id, /usr/bin/install, /usr/bin/ln, /usr/bin/mv, /usr/bin/openssl, /usr/bin/python3, /usr/bin/rm, /usr/bin/sed, /usr/bin/systemctl, /usr/bin/tee, /usr/bin/test, /usr/bin/touch, /usr/bin/true, /bin/true, /usr/sbin/certbot, /usr/bin/certbot, /usr/sbin/service, /usr/sbin/sshd, /usr/sbin/ufw, /usr/sbin/useradd, /usr/sbin/usermod
+%s ALL=(ALL) NOPASSWD: RESISTACK_DEPLOY`, opts.User)
+	}
 }
 
 func DefaultPublicKeyPath(cfg config.Config) string {
@@ -124,10 +194,10 @@ authorized_keys_path() {
 
 check_passwordless_sudo() {
   if [ "$(id -un)" = "${DEPLOY_USER}" ]; then
-    sudo -n true >/dev/null 2>&1
+    sudo -n -l >/dev/null 2>&1
     return 0
   fi
-  sudo -n -u "${DEPLOY_USER}" sudo -n true >/dev/null 2>&1
+  sudo -n -u "${DEPLOY_USER}" sudo -n -l >/dev/null 2>&1
 }
 
 echo "[resistack] checking deploy user ${DEPLOY_USER}"
@@ -168,11 +238,16 @@ echo "[resistack] deploy user is ready"
 }
 
 func BuildBootstrapScript(opts Options) string {
+	if opts.SudoMode == "" {
+		opts.SudoMode = config.SudoModeLimited
+	}
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 
 DEPLOY_USER=%s
 EXPECTED_PUBLIC_KEY=%s
+SUDO_MODE=%s
+SUDOERS_CONTENT=%s
 
 require_privileged_access() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -267,22 +342,44 @@ ensure_authorized_key() {
 
 ensure_passwordless_sudo() {
   local sudoers_path
+  local tmp
+  local current
+
   sudoers_path="/etc/sudoers.d/resistack-${DEPLOY_USER}"
-  if sudo test -f "${sudoers_path}" && sudo grep -qxF "${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL" "${sudoers_path}"; then
-    echo "[resistack] passwordless sudo already configured for ${DEPLOY_USER}"
+
+  if [ "${SUDO_MODE}" = "manual" ]; then
+    echo "[resistack] sudo_mode=manual; not modifying ${sudoers_path}"
+    echo "[resistack] review and install a sudoers profile manually, then validate it with: sudo visudo -cf ${sudoers_path}"
+    echo "[resistack] suggested sudoers content:"
+    printf '%%s\n' "${SUDOERS_CONTENT}"
     return 0
   fi
-  printf '%%s\n' "${DEPLOY_USER} ALL=(ALL) NOPASSWD:ALL" | sudo tee "${sudoers_path}" >/dev/null
-  sudo chmod 440 "${sudoers_path}"
-  echo "[resistack] enabled passwordless sudo for ${DEPLOY_USER}"
+
+  tmp="$(mktemp)"
+  current="$(mktemp)"
+  trap 'rm -f "${tmp}" "${current}"' RETURN
+  printf '%%s\n' "${SUDOERS_CONTENT}" > "${tmp}"
+  sudo visudo -cf "${tmp}" >/dev/null
+  sudo cat "${sudoers_path}" > "${current}" 2>/dev/null || true
+  if cmp -s "${tmp}" "${current}"; then
+    echo "[resistack] passwordless sudo already configured for ${DEPLOY_USER} with mode ${SUDO_MODE}"
+    return 0
+  fi
+  sudo install -m 0440 "${tmp}" "${sudoers_path}"
+  sudo visudo -cf "${sudoers_path}" >/dev/null
+  echo "[resistack] configured passwordless sudo for ${DEPLOY_USER} with mode ${SUDO_MODE}"
 }
 
 check_passwordless_sudo() {
-  if [ "$(id -un)" = "${DEPLOY_USER}" ]; then
-    sudo -n true >/dev/null 2>&1
+  if [ "${SUDO_MODE}" = "manual" ]; then
+    echo "[resistack] skipping passwordless sudo verification because sudo_mode=manual"
     return 0
   fi
-  sudo -n -u "${DEPLOY_USER}" sudo -n true >/dev/null 2>&1
+  if [ "$(id -un)" = "${DEPLOY_USER}" ]; then
+    sudo -n -l >/dev/null 2>&1
+    return 0
+  fi
+  sudo -n -u "${DEPLOY_USER}" sudo -n -l >/dev/null 2>&1
 }
 
 verify_bootstrap() {
@@ -314,7 +411,7 @@ ensure_authorized_key
 ensure_passwordless_sudo
 verify_bootstrap
 echo "[resistack] deploy user bootstrap complete"
-`, scriptutil.ShellQuote(opts.User), scriptutil.ShellQuote(opts.PublicKey))
+`, scriptutil.ShellQuote(opts.User), scriptutil.ShellQuote(opts.PublicKey), scriptutil.ShellQuote(opts.SudoMode), scriptutil.ShellQuote(sudoersContent(opts)))
 }
 
 func loadPublicKey(cfg config.Config, override string) (string, string, error) {

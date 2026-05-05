@@ -64,6 +64,17 @@ func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs 
 	if !cfg.HostHardening.Enabled {
 		warnings = append(warnings, "host_hardening.enabled=false; baseline hardening will not be applied")
 	}
+	switch strings.ToLower(strings.TrimSpace(cfg.HostHardening.SudoMode)) {
+	case "", config.SudoModeLimited, config.SudoModeFull, config.SudoModeManual:
+	default:
+		errs = append(errs, fmt.Errorf("host_hardening.sudo_mode must be one of: %s, %s, %s", config.SudoModeLimited, config.SudoModeFull, config.SudoModeManual))
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.HostHardening.SudoMode), config.SudoModeFull) {
+		warnings = append(warnings, "host_hardening.sudo_mode=full grants NOPASSWD:ALL to the deploy user; use only when you accept broad sudo risk")
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.HostHardening.SudoMode), config.SudoModeManual) {
+		warnings = append(warnings, "host_hardening.sudo_mode=manual will not create sudoers; bootstrap prints manual commands instead")
+	}
 	managedSSHUsers := config.ManagedSSHAllowUsers(cfg)
 	futureSSHUsers := config.FutureSSHLoginUsers(cfg)
 	if cfg.HostHardening.SSHHardening.MaxAuthTries <= 0 {

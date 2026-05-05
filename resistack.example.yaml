@@ -14,6 +14,7 @@ server:
 
 host_hardening:
   enabled: true # Enable baseline host hardening.
+  sudo_mode: "limited" # Passwordless sudo profile: limited, full, or manual.
   ssh_hardening:
     disable_root_login: true # Disable direct root SSH login.
     disable_password_auth: true # Require SSH keys instead of passwords.

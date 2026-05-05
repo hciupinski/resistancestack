@@ -95,6 +95,35 @@ func TestCheck_InvalidOperatorAccessModeReturnsError(t *testing.T) {
 	}
 }
 
+func TestCheck_InvalidSudoModeReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.HostHardening.SudoMode = "unbounded"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_FullSudoModeWarns(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.HostHardening.SudoMode = config.SudoModeFull
+
+	warnings, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	found := false
+	for _, warning := range warnings {
+		if warning == "host_hardening.sudo_mode=full grants NOPASSWD:ALL to the deploy user; use only when you accept broad sudo risk" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected full sudo risk warning")
+	}
+}
+
 func TestCheck_PublicHardenedWithoutAllowlistWarns(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.HostHardening.UFWPolicy.AdminAllowlist = nil
