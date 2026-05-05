@@ -14,17 +14,28 @@ const (
 	RepoVisibilityInternal           = "internal"
 	FormatText                       = "text"
 	FormatJSON                       = "json"
+	FormatHTML                       = "html"
 	SeverityLow                      = "low"
 	SeverityMedium                   = "medium"
 	SeverityHigh                     = "high"
 	SeverityCritical                 = "critical"
+	SeverityNotChecked               = "not_checked"
 	OperatorAccessModePublicHardened = "public_hardened"
 	OperatorAccessModeAllowlistOnly  = "allowlist_only"
+	SudoModeLimited                  = "limited"
+	SudoModeFull                     = "full"
+	SudoModeManual                   = "manual"
+	DeploymentProfileVPSNginx        = "vps-nginx"
+	DeploymentProfileDockerCompose   = "docker-compose"
+	DeploymentProfileReverseProxy    = "reverse-proxy"
+	DeploymentProfileNode            = "node"
+	DeploymentProfileDotnet          = "dotnet"
 )
 
 type Config struct {
 	ProjectName     string                `yaml:"project_name"`
 	Mode            ModeConfig            `yaml:"mode"`
+	Deployment      DeploymentConfig      `yaml:"deployment"`
 	Server          ServerConfig          `yaml:"server"`
 	HostHardening   HostHardeningConfig   `yaml:"host_hardening"`
 	AppInventory    AppInventoryConfig    `yaml:"app_inventory"`
@@ -43,6 +54,10 @@ type ModeConfig struct {
 	Strategy string `yaml:"strategy"`
 }
 
+type DeploymentConfig struct {
+	Profile string `yaml:"profile"`
+}
+
 type ServerConfig struct {
 	Host            string `yaml:"host"`
 	SSHUser         string `yaml:"ssh_user"`
@@ -54,6 +69,7 @@ type ServerConfig struct {
 
 type HostHardeningConfig struct {
 	Enabled                  bool                  `yaml:"enabled"`
+	SudoMode                 string                `yaml:"sudo_mode"`
 	SSHHardening             SSHHardeningConfig    `yaml:"ssh_hardening"`
 	UFWPolicy                UFWPolicyConfig       `yaml:"ufw_policy"`
 	Fail2ban                 Fail2banConfig        `yaml:"fail2ban"`

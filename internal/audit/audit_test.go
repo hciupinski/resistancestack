@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/hciupinski/resistancestack/internal/config"
@@ -26,6 +27,166 @@ func TestEvaluate_FindsHostAndCIRisks(t *testing.T) {
 	}
 	if report.Summary.TopSeverity != config.SeverityHigh {
 		t.Fatalf("expected top severity high, got %s", report.Summary.TopSeverity)
+	}
+	if report.Summary.SecurityScore < 0 || report.Summary.SecurityScore > 100 {
+		t.Fatalf("expected security score in 0-100 range, got %d", report.Summary.SecurityScore)
+	}
+}
+
+func TestEvaluate_LocalSnapshotReportsNotCheckedInsteadOfHostFindings(t *testing.T) {
+	cfg := config.Default("demo")
+	snapshot := inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo:          inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host:          inventory.AreaStatus{Status: inventory.AreaStatusNotChecked, Reason: "local mode"},
+			CloudExternal: inventory.AreaStatus{Status: inventory.AreaStatusNotChecked, Reason: "local mode"},
+		},
+		Repo: inventory.RepoInfo{
+			GitHubWorkflows: []string{".github/workflows/deploy.yml"},
+		},
+	}
+
+	report := Evaluate(cfg, snapshot)
+
+	foundHostNotChecked := false
+	foundCloudNotChecked := false
+	for _, finding := range report.Findings {
+		switch finding.ID {
+		case "host.not_checked":
+			foundHostNotChecked = true
+			if finding.Severity != config.SeverityNotChecked {
+				t.Fatalf("expected host not_checked severity, got %s", finding.Severity)
+			}
+		case "cloud_external.not_checked":
+			foundCloudNotChecked = true
+			if finding.Severity != config.SeverityNotChecked {
+				t.Fatalf("expected cloud not_checked severity, got %s", finding.Severity)
+			}
+		case "host.ufw.disabled", "host.fail2ban.inactive", "host.sudo.passwordless-missing":
+			t.Fatalf("expected local snapshot not to emit remote host finding %q", finding.ID)
+		}
+	}
+	if !foundHostNotChecked {
+		t.Fatal("expected host.not_checked finding")
+	}
+	if !foundCloudNotChecked {
+		t.Fatal("expected cloud_external.not_checked finding")
+	}
+	if report.Summary.BySeverity[config.SeverityNotChecked] != 2 {
+		t.Fatalf("expected two not_checked findings, got %d", report.Summary.BySeverity[config.SeverityNotChecked])
+	}
+}
+
+func TestEvaluate_DockerComposeProfileFindsMissingComposeEvidence(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Deployment.Profile = config.DeploymentProfileDockerCompose
+	cfg.AppInventory.ComposePaths = nil
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+		},
+		UFW:              inventory.ServiceState{Enabled: true, Status: "active"},
+		Fail2ban:         inventory.ServiceState{Enabled: true, Status: "active"},
+		PasswordlessSudo: true,
+		Observability:    inventory.ObservabilityInfo{Enabled: true, Status: "active"},
+		TLSCertificates:  []inventory.TLSCertificate{{Path: "/etc/letsencrypt/live/app.example.com/fullchain.pem", Names: []string{"app.example.com"}, Valid: true}},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "deployment.docker-compose.compose-missing" {
+			found = true
+			if !strings.Contains(finding.DetectedValue, "profile=docker-compose") {
+				t.Fatalf("expected profile in detected value, got %q", finding.DetectedValue)
+			}
+			if !strings.Contains(finding.DetectedValue, "repo:checked") {
+				t.Fatalf("expected checked areas in detected value, got %q", finding.DetectedValue)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected docker-compose profile finding")
+	}
+}
+
+func TestEvaluate_NodeProfileFindsMissingNodeProject(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Deployment.Profile = config.DeploymentProfileNode
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host: inventory.AreaStatus{Status: inventory.AreaStatusNotChecked, Reason: "local mode"},
+		},
+		Repo: inventory.RepoInfo{
+			GitHubWorkflows: []string{".github/workflows/security-dependencies.yml"},
+		},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "deployment.node.project-missing" {
+			found = true
+			if finding.Severity != config.SeverityLow {
+				t.Fatalf("expected low severity, got %s", finding.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected node profile finding")
+	}
+}
+
+func TestEvaluate_ReverseProxyProfileFindsMissingProxy(t *testing.T) {
+	cfg := config.Default("demo")
+	cfg.Deployment.Profile = config.DeploymentProfileReverseProxy
+
+	report := Evaluate(cfg, inventory.Snapshot{
+		Areas: inventory.Areas{
+			Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			Host: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+		},
+		Proxy:            inventory.ProxyInfo{Kind: "none"},
+		UFW:              inventory.ServiceState{Enabled: true, Status: "active"},
+		Fail2ban:         inventory.ServiceState{Enabled: true, Status: "active"},
+		PasswordlessSudo: true,
+		Observability:    inventory.ObservabilityInfo{Enabled: true, Status: "active"},
+		TLSCertificates:  []inventory.TLSCertificate{{Path: "/etc/letsencrypt/live/app.example.com/fullchain.pem", Names: []string{"app.example.com"}, Valid: true}},
+	})
+
+	found := false
+	for _, finding := range report.Findings {
+		if finding.ID == "deployment.reverse-proxy.not-detected" {
+			found = true
+			if !strings.Contains(finding.Recommendation, "profile") {
+				t.Fatalf("expected profile recommendation, got %q", finding.Recommendation)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected reverse-proxy profile finding")
+	}
+}
+
+func TestSecurityScore_WeightsFindingsAndCapsAtZero(t *testing.T) {
+	score := SecurityScore(Summary{BySeverity: map[string]int{
+		config.SeverityCritical:   1,
+		config.SeverityHigh:       1,
+		config.SeverityMedium:     1,
+		config.SeverityLow:        1,
+		config.SeverityNotChecked: 1,
+	}})
+	if score != 41 {
+		t.Fatalf("unexpected score %d", score)
+	}
+
+	score = SecurityScore(Summary{BySeverity: map[string]int{
+		config.SeverityCritical: 4,
+	}})
+	if score != 0 {
+		t.Fatalf("expected score to be capped at zero, got %d", score)
 	}
 }
 

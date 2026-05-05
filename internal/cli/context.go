@@ -12,6 +12,7 @@ type ConfigSelection struct {
 	ConfigPath   string
 	Env          string
 	OutputFormat string
+	Local        bool
 }
 
 type Context struct {
@@ -25,12 +26,16 @@ type Context struct {
 }
 
 func loadContext(selection ConfigSelection, out io.Writer, errOut io.Writer) (Context, error) {
-	cfg, overlayPath, err := loadConfigWithValidation(selection.ConfigPath, selection.Env, errOut, selection.OutputFormat)
+	root, err := os.Getwd()
 	if err != nil {
 		return Context{}, err
 	}
 
-	root, err := os.Getwd()
+	cfg, overlayPath, err := loadConfigWithValidationOptions(selection.ConfigPath, selection.Env, errOut, loadConfigOptions{
+		Local:        selection.Local,
+		DefaultRoot:  root,
+		OutputFormat: selection.OutputFormat,
+	})
 	if err != nil {
 		return Context{}, err
 	}

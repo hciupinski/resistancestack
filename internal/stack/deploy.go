@@ -8,11 +8,14 @@ import (
 	"github.com/hciupinski/resistancestack/internal/audit"
 	"github.com/hciupinski/resistancestack/internal/ci"
 	"github.com/hciupinski/resistancestack/internal/config"
+	"github.com/hciupinski/resistancestack/internal/doctor"
 	"github.com/hciupinski/resistancestack/internal/hosthardening"
 	"github.com/hciupinski/resistancestack/internal/inventory"
 	"github.com/hciupinski/resistancestack/internal/observability"
 	"github.com/hciupinski/resistancestack/internal/preflight"
 )
+
+var runDoctor = doctor.Run
 
 func Inventory(cfg config.Config, root string, out io.Writer) (inventory.Snapshot, error) {
 	warnings, errs := preflight.CheckLocal(cfg, true)
@@ -22,6 +25,21 @@ func Inventory(cfg config.Config, root string, out io.Writer) (inventory.Snapsho
 		return inventory.Snapshot{}, errors.New("preflight checks failed")
 	}
 	snapshot, err := inventory.Collect(cfg, root)
+	if err != nil {
+		return inventory.Snapshot{}, err
+	}
+	renderInventory(out, snapshot)
+	return snapshot, nil
+}
+
+func InventoryLocal(cfg config.Config, root string, out io.Writer) (inventory.Snapshot, error) {
+	warnings, errs := preflight.CheckLocal(cfg, false)
+	printWarnings(out, warnings)
+	printErrors(out, "preflight error", errs)
+	if len(errs) > 0 {
+		return inventory.Snapshot{}, errors.New("preflight checks failed")
+	}
+	snapshot, err := inventory.CollectLocal(cfg, root)
 	if err != nil {
 		return inventory.Snapshot{}, err
 	}
@@ -42,12 +60,63 @@ func Audit(cfg config.Config, root string, dryRun bool, out io.Writer) (audit.Re
 	if err != nil {
 		return audit.Report{}, err
 	}
-	fmt.Fprintln(out, audit.FormatText(report))
+	printAuditReport(out, cfg, report)
 	fmt.Fprintf(out, "Saved audit report to %s\n", reportPath)
 	return report, nil
 }
 
-func Apply(cfg config.Config, root string, requestedModules []string, dryRun bool, out io.Writer, errOut io.Writer) error {
+func AuditLocal(cfg config.Config, root string, dryRun bool, out io.Writer) (audit.Report, error) {
+	if dryRun {
+		fmt.Fprintln(out, "audit is read-only; proceeding in dry-run mode")
+	}
+	snapshot, err := inventory.CollectLocal(cfg, root)
+	if err != nil {
+		return audit.Report{}, err
+	}
+	report := audit.Evaluate(cfg, snapshot)
+	reportPath, err := audit.Save(root, cfg, report)
+	if err != nil {
+		return audit.Report{}, err
+	}
+	printAuditReport(out, cfg, report)
+	fmt.Fprintf(out, "Saved audit report to %s\n", reportPath)
+	return report, nil
+}
+
+func printAuditReport(out io.Writer, cfg config.Config, report audit.Report) {
+	if cfg.Reporting.Format == config.FormatHTML {
+		fmt.Fprintf(out, "Audit generated at: %s\n", report.GeneratedAt.Format("2006-01-02T15:04:05Z07:00"))
+		fmt.Fprintf(out, "Top severity: %s\n", report.Summary.TopSeverity)
+		fmt.Fprintf(out, "Security score: %d/100\n", report.Summary.SecurityScore)
+		fmt.Fprintf(out, "Findings: %d\n\n", len(report.Findings))
+		return
+	}
+	fmt.Fprintln(out, audit.FormatText(report))
+}
+
+func Doctor(cfg config.Config, root string, opts doctor.Options, out io.Writer) (doctor.Report, error) {
+	report, err := doctor.Run(cfg, root, opts)
+	if err != nil {
+		return doctor.Report{}, err
+	}
+	reportPath, err := doctor.Save(root, cfg, report)
+	if err != nil {
+		return doctor.Report{}, err
+	}
+	if cfg.Reporting.Format == config.FormatJSON {
+		raw, err := doctor.FormatJSON(report)
+		if err != nil {
+			return doctor.Report{}, err
+		}
+		fmt.Fprintln(out, string(raw))
+	} else {
+		fmt.Fprintln(out, doctor.FormatText(report))
+	}
+	fmt.Fprintf(out, "Saved doctor report to %s\n", reportPath)
+	return report, nil
+}
+
+func Apply(cfg config.Config, root string, requestedModules []string, dryRun bool, forceWithRiskAcceptance bool, out io.Writer, errOut io.Writer) error {
 	warnings, errs := preflight.CheckLocal(cfg, true)
 	printWarnings(out, warnings)
 	printErrors(errOut, "preflight error", errs)
@@ -58,6 +127,16 @@ func Apply(cfg config.Config, root string, requestedModules []string, dryRun boo
 	modules, err := parseModules(requestedModules)
 	if err != nil {
 		return err
+	}
+	if !dryRun && !forceWithRiskAcceptance && containsModule(modules, ModuleHostHardening) {
+		report, err := runDoctor(cfg, root, doctor.Options{Mode: doctor.ModeAll, Version: "dev"})
+		if err != nil {
+			return err
+		}
+		if report.HasFailures() {
+			fmt.Fprintln(errOut, doctor.FormatText(report))
+			return errors.New("doctor checks failed; run `resistack doctor --all` or pass `--force-with-risk-acceptance` to apply host-hardening anyway")
+		}
 	}
 	for _, module := range modules {
 		switch module {
@@ -98,8 +177,17 @@ func Apply(cfg config.Config, root string, requestedModules []string, dryRun boo
 	return nil
 }
 
-func RollbackHost(cfg config.Config, out io.Writer, errOut io.Writer) error {
-	return hosthardening.Rollback(cfg, out, errOut)
+func containsModule(modules []Module, expected Module) bool {
+	for _, module := range modules {
+		if module == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func RollbackHost(cfg config.Config, dryRun bool, out io.Writer, errOut io.Writer) error {
+	return hosthardening.Rollback(cfg, dryRun, out, errOut)
 }
 
 func ValidateCI(cfg config.Config, root string, out io.Writer) error {

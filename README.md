@@ -66,6 +66,8 @@ In the repository:
 
 ## Quick Start
 
+For production brownfield adoption, follow [Safe Adoption on an Existing VPS](docs/SAFE_ADOPTION.md) before applying host changes.
+
 ### Install With Homebrew
 
 Recommended installation uses a dedicated Homebrew tap repository:
@@ -129,6 +131,23 @@ host_hardening:
       - "198.51.100.10/32"
 ```
 
+Deployment profiles let the wizard and audit tune checks to the expected application shape:
+
+```yaml
+deployment:
+  profile: "vps-nginx"
+```
+
+Supported profiles:
+
+- `vps-nginx`: expects a VPS with Nginx ingress and host-level TLS/log visibility.
+- `docker-compose`: expects Compose files or `app_inventory.compose_paths`.
+- `reverse-proxy`: expects an active reverse proxy, but not necessarily Nginx ownership.
+- `node`: checks for Node project evidence such as `package.json`.
+- `dotnet`: checks for .NET project evidence such as `.csproj`.
+
+If the profile is omitted, ResistanceStack treats it as `vps-nginx` and continues.
+
 ### 2. Fill In Server Access
 
 At minimum, set:
@@ -158,6 +177,14 @@ resistack deploy-user check
 By default, `deploy-user bootstrap` connects as `server.ssh_user`, bootstraps the preferred future SSH user from `host_hardening.ssh_hardening.allow_users`, and installs the public key that matches `server.private_key_path`.
 If you still connect as `root`, keep `server.ssh_user: root`, declare the future user in `allow_users`, run the bootstrap command, then switch `server.ssh_user` to that named account after verification.
 
+`host_hardening.sudo_mode` controls what sudo profile bootstrap prepares:
+
+- `limited` writes a ResistanceStack-managed command allowlist and validates it with `visudo -cf`.
+- `manual` prints sudoers instructions but does not modify `/etc/sudoers.d`.
+- `full` grants `NOPASSWD:ALL` and requires `resistack deploy-user bootstrap --accept-sudo-all-risk`.
+
+Use `resistack deploy-user bootstrap --dry-run` to review the risk profile and generated script before changing the host.
+
 ### 3. Detect Current State
 
 ```bash
@@ -170,6 +197,7 @@ Use this before changing anything. It shows what is already running and what the
 
 ```bash
 resistack audit
+resistack audit --output html
 ```
 
 The audit produces findings with:
@@ -181,6 +209,8 @@ The audit produces findings with:
 - whether the issue can be remediated automatically
 
 Reports are written to `reporting.output_path`.
+Text, JSON, and self-contained HTML reports are supported through `reporting.format` or `--output`.
+The HTML report includes a 0-100 security score, checked-area status, severity summary, findings, a remediation plan, and not-checked areas.
 
 If the configured `server.ssh_user` does not have passwordless sudo, the audit will report it explicitly and show the exact `sudoers` command to run before host hardening.
 If `host_hardening.ssl_certificates.enabled=true`, the audit also checks only the first entry in `app_inventory.domains` and expects a valid local certificate for that primary domain.
@@ -264,9 +294,12 @@ resistack observability disable
 
 ```bash
 resistack rollback host
+resistack rollback host --dry-run
 ```
 
-Host hardening stores backups of modified system files and can restore the latest applied set.
+Host hardening stores backups of modified system files, UFW state, service state, and operation metadata before applying changes.
+Use `--dry-run` to inspect what would be restored before changing the host.
+If no backup exists, rollback prints the backup path it checked and the manual areas to inspect.
 
 ## Command Reference
 
@@ -282,7 +315,7 @@ resistack ci generate
 resistack ci validate
 resistack observability enable [--dry-run]
 resistack observability disable
-resistack rollback host
+resistack rollback host [--dry-run]
 ```
 
 All config-backed commands also accept:

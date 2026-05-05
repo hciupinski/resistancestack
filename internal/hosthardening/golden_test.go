@@ -11,7 +11,7 @@ import (
 func TestBuildApplyScript_DefaultHash(t *testing.T) {
 	cfg := config.Default("demo")
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(BuildApplyScript(cfg))))
-	want := "17728834efa3618872841843ad143704594621fdee61226d23da87caa4683468"
+	want := "31e1d6c4295509edb2fe326ddd9675090538c4999f97bb67fafa37cbecfa4483"
 	if got != want {
 		t.Fatalf("unexpected apply script hash %s", got)
 	}
@@ -20,7 +20,7 @@ func TestBuildApplyScript_DefaultHash(t *testing.T) {
 func TestBuildRollbackScript_DefaultHash(t *testing.T) {
 	cfg := config.Default("demo")
 	got := fmt.Sprintf("%x", sha256.Sum256([]byte(BuildRollbackScript(cfg))))
-	want := "fece57c290d74b0e4c09bf27e42cda39d609393cc5d1df80d3bb367026a38365"
+	want := "ad4609582e65f212920c6bf9e3e2f6c40e2e0c674a5040f73d5c6aab9317a467"
 	if got != want {
 		t.Fatalf("unexpected rollback script hash %s", got)
 	}

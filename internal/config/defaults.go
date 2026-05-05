@@ -6,6 +6,9 @@ func Default(projectName string) Config {
 		Mode: ModeConfig{
 			Strategy: ModeAuditThenApply,
 		},
+		Deployment: DeploymentConfig{
+			Profile: DeploymentProfileVPSNginx,
+		},
 		Server: ServerConfig{
 			Host:            "1.2.3.4",
 			SSHUser:         "deployer",
@@ -15,7 +18,8 @@ func Default(projectName string) Config {
 			KnownHostsPath:  "~/.ssh/known_hosts",
 		},
 		HostHardening: HostHardeningConfig{
-			Enabled: true,
+			Enabled:  true,
+			SudoMode: SudoModeLimited,
 			SSHHardening: SSHHardeningConfig{
 				DisableRootLogin:        true,
 				DisablePasswordAuth:     true,

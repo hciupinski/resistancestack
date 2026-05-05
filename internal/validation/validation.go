@@ -21,7 +21,15 @@ var severityRank = map[string]int{
 
 var hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
+type Options struct {
+	Local bool
+}
+
 func Check(cfg config.Config) (warnings []string, errs []error) {
+	return CheckWithOptions(cfg, Options{})
+}
+
+func CheckWithOptions(cfg config.Config, opts Options) (warnings []string, errs []error) {
 	if strings.TrimSpace(cfg.ProjectName) == "" {
 		errs = append(errs, fmt.Errorf("project_name is required"))
 	}
@@ -30,6 +38,12 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 		errs = append(errs, fmt.Errorf("mode.strategy is required"))
 	} else if cfg.Mode.Strategy != config.ModeAuditThenApply {
 		errs = append(errs, fmt.Errorf("mode.strategy must be %q", config.ModeAuditThenApply))
+	}
+
+	switch strings.ToLower(strings.TrimSpace(cfg.Deployment.Profile)) {
+	case "", config.DeploymentProfileVPSNginx, config.DeploymentProfileDockerCompose, config.DeploymentProfileReverseProxy, config.DeploymentProfileNode, config.DeploymentProfileDotnet:
+	default:
+		errs = append(errs, fmt.Errorf("deployment.profile must be one of: %s, %s, %s, %s, %s", config.DeploymentProfileVPSNginx, config.DeploymentProfileDockerCompose, config.DeploymentProfileReverseProxy, config.DeploymentProfileNode, config.DeploymentProfileDotnet))
 	}
 
 	if strings.TrimSpace(cfg.Server.Host) == "" {
@@ -41,7 +55,7 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 	if cfg.Server.SSHPort <= 0 || cfg.Server.SSHPort > 65535 {
 		errs = append(errs, fmt.Errorf("server.ssh_port must be between 1 and 65535"))
 	}
-	if strings.TrimSpace(cfg.Server.PrivateKeyPath) == "" {
+	if !opts.Local && strings.TrimSpace(cfg.Server.PrivateKeyPath) == "" {
 		errs = append(errs, fmt.Errorf("server.private_key_path is required"))
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Server.HostKeyChecking)) {
@@ -49,12 +63,23 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 	default:
 		errs = append(errs, fmt.Errorf("server.host_key_checking must be one of: strict, accept-new"))
 	}
-	if strings.EqualFold(strings.TrimSpace(cfg.Server.HostKeyChecking), "strict") && strings.TrimSpace(cfg.Server.KnownHostsPath) == "" {
+	if !opts.Local && strings.EqualFold(strings.TrimSpace(cfg.Server.HostKeyChecking), "strict") && strings.TrimSpace(cfg.Server.KnownHostsPath) == "" {
 		errs = append(errs, fmt.Errorf("server.known_hosts_path is required when server.host_key_checking=strict"))
 	}
 
 	if !cfg.HostHardening.Enabled {
 		warnings = append(warnings, "host_hardening.enabled=false; baseline hardening will not be applied")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.HostHardening.SudoMode)) {
+	case "", config.SudoModeLimited, config.SudoModeFull, config.SudoModeManual:
+	default:
+		errs = append(errs, fmt.Errorf("host_hardening.sudo_mode must be one of: %s, %s, %s", config.SudoModeLimited, config.SudoModeFull, config.SudoModeManual))
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.HostHardening.SudoMode), config.SudoModeFull) {
+		warnings = append(warnings, "host_hardening.sudo_mode=full grants NOPASSWD:ALL to the deploy user; use only when you accept broad sudo risk")
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.HostHardening.SudoMode), config.SudoModeManual) {
+		warnings = append(warnings, "host_hardening.sudo_mode=manual will not create sudoers; bootstrap prints manual commands instead")
 	}
 	managedSSHUsers := config.ManagedSSHAllowUsers(cfg)
 	futureSSHUsers := config.FutureSSHLoginUsers(cfg)
@@ -180,9 +205,9 @@ func Check(cfg config.Config) (warnings []string, errs []error) {
 	}
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Reporting.Format)) {
-	case config.FormatText, config.FormatJSON:
+	case config.FormatText, config.FormatJSON, config.FormatHTML:
 	default:
-		errs = append(errs, fmt.Errorf("reporting.format must be one of: %s, %s", config.FormatText, config.FormatJSON))
+		errs = append(errs, fmt.Errorf("reporting.format must be one of: %s, %s, %s", config.FormatText, config.FormatJSON, config.FormatHTML))
 	}
 	if severityRank[strings.ToLower(strings.TrimSpace(cfg.Reporting.MinimumSeverity))] == 0 {
 		errs = append(errs, fmt.Errorf("reporting.minimum_severity must be one of: low, medium, high, critical"))

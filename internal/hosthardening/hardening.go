@@ -77,6 +77,7 @@ ensure_managed_certificate
 set -euo pipefail
 
 BACKUP_ROOT=%s
+TOOL_VERSION=%s
 SSH_PORT=%d
 PRIMARY_SSH_USER=%s
 ALLOW_USERS=%s
@@ -104,10 +105,8 @@ require_privileged_access() {
     return 0
   fi
   echo "[resistack] passwordless sudo is required for host hardening" >&2
-  echo "[resistack] configure it for user %s, for example:" >&2
-  echo "[resistack]   echo '%s ALL=(ALL) NOPASSWD:ALL' | sudo tee /etc/sudoers.d/resistack-%s" >&2
-  echo "[resistack]   sudo chmod 440 /etc/sudoers.d/resistack-%s" >&2
-  echo "[resistack] then verify: sudo -n true && echo OK" >&2
+  echo "[resistack] run: resistack deploy-user bootstrap --dry-run" >&2
+  echo "[resistack] then bootstrap with host_hardening.sudo_mode=%s and verify with: resistack deploy-user check" >&2
   exit 1
 }
 
@@ -572,9 +571,19 @@ require_privileged_access
 timestamp="$(date -u +%%Y%%m%%d%%H%%M%%S)"
 op_dir="${BACKUP_ROOT}/${timestamp}"
 manifest="${op_dir}/manifest.txt"
+metadata="${op_dir}/operation.txt"
+service_state="${op_dir}/service-state.env"
+absent_root="${op_dir}/absent"
 sudo install -d -m 0700 "${BACKUP_ROOT}" "${op_dir}"
+sudo install -d -m 0700 "${absent_root}"
 sudo ln -sfn "${op_dir}" "${BACKUP_ROOT}/last"
 sudo touch "${manifest}"
+{
+  printf 'tool_version=%%s\n' "${TOOL_VERSION}"
+  printf 'operation=host-hardening\n'
+  printf 'created_at=%%s\n' "$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)"
+  printf 'backup_root=%%s\n' "${BACKUP_ROOT}"
+} | sudo tee "${metadata}" >/dev/null
 
 append_manifest() {
   printf '%%s\n' "$1" | sudo tee -a "${manifest}" >/dev/null
@@ -584,11 +593,51 @@ backup_file() {
   local path="$1"
   local rel="${path#/}"
   local dest="${op_dir}/${rel}"
+  local absent_marker="${absent_root}/${rel}"
   sudo install -d -m 0700 "$(dirname "${dest}")"
   if sudo test -f "${path}"; then
     sudo cp -a "${path}" "${dest}"
+  else
+    sudo install -d -m 0700 "$(dirname "${absent_marker}")"
+    sudo touch "${absent_marker}"
+  fi
+  append_manifest "${path}"
+}
+
+backup_tree() {
+  local path="$1"
+  local rel="${path#/}"
+  local dest="${op_dir}/${rel}"
+  sudo install -d -m 0700 "$(dirname "${dest}")"
+  if sudo test -d "${path}"; then
+    sudo cp -a "${path}" "${dest}"
     append_manifest "${path}"
   fi
+}
+
+service_active_state() {
+  local service="$1"
+  sudo systemctl is-active "${service}" 2>/dev/null || true
+}
+
+service_enabled_state() {
+  local service="$1"
+  sudo systemctl is-enabled "${service}" 2>/dev/null || true
+}
+
+snapshot_service_states() {
+  {
+    for service in ssh sshd fail2ban ufw; do
+      printf '%%s_active=%%q\n' "${service}" "$(service_active_state "${service}")"
+      printf '%%s_enabled=%%q\n' "${service}" "$(service_enabled_state "${service}")"
+    done
+  } | sudo tee "${service_state}" >/dev/null
+}
+
+snapshot_ufw_state() {
+  sudo ufw status numbered 2>/dev/null | sudo tee "${op_dir}/ufw-status-numbered.txt" >/dev/null || true
+  sudo ufw show added 2>/dev/null | sudo tee "${op_dir}/ufw-show-added.txt" >/dev/null || true
+  backup_tree /etc/ufw
 }
 
 restart_ssh_service() {
@@ -623,6 +672,8 @@ if [ "${REQUIRE_PASSWORDLESS_SUDO}" = "true" ]; then
   require_privileged_access
 fi
 
+snapshot_service_states
+snapshot_ufw_state
 verify_future_ssh_access
 
 if command -v apt-get >/dev/null 2>&1; then
@@ -754,6 +805,7 @@ sudo -n -l >/dev/null
 
 echo "[resistack] host hardening applied"
 `, scriptutil.ShellQuote(cfg.HostHardening.BackupDir),
+		scriptutil.ShellQuote("dev"),
 		cfg.Server.SSHPort,
 		scriptutil.ShellQuote(cfg.Server.SSHUser),
 		scriptutil.ShellQuote(allowUsers),
@@ -768,10 +820,7 @@ echo "[resistack] host hardening applied"
 		scriptutil.ShellQuote(primaryDomain),
 		scriptutil.ShellQuote(cfg.HostHardening.SSLCertificates.Email),
 		scriptutil.ShellQuote(boolString(cfg.HostHardening.SSLCertificates.Staging)),
-		cfg.Server.SSHUser,
-		cfg.Server.SSHUser,
-		cfg.Server.SSHUser,
-		cfg.Server.SSHUser,
+		cfg.HostHardening.SudoMode,
 		strings.Join(packageList, " "),
 		yesNo(!cfg.HostHardening.SSHHardening.DisableRootLogin, "prohibit-password", "no"),
 		yesNo(!cfg.HostHardening.SSHHardening.DisablePasswordAuth, "yes", "no"),
@@ -795,23 +844,85 @@ echo "[resistack] host hardening applied"
 }
 
 func BuildRollbackScript(cfg config.Config) string {
+	return BuildRollbackScriptWithOptions(cfg, false)
+}
+
+func BuildRollbackScriptWithOptions(cfg config.Config, dryRun bool) string {
 	return fmt.Sprintf(`#!/usr/bin/env bash
 set -euo pipefail
 BACKUP_ROOT=%s
+DRY_RUN=%s
 latest="$(readlink -f "${BACKUP_ROOT}/last" 2>/dev/null || true)"
-if [ -z "${latest}" ] || [ ! -f "${latest}/manifest.txt" ]; then
-  echo "no host backup available" >&2
+if [ -z "${latest}" ] || ! sudo test -f "${latest}/manifest.txt"; then
+  echo "[resistack] no host-hardening backup is available at ${BACKUP_ROOT}/last" >&2
+  echo "[resistack] manual recovery: inspect /etc/ssh/sshd_config, /etc/fail2ban/jail.d/resistack-sshd.local, /etc/ufw, and provider firewall rules before changing access controls" >&2
   exit 1
 fi
 
+echo "[resistack] rollback source: ${latest}"
+if sudo test -f "${latest}/operation.txt"; then
+  echo "[resistack] operation manifest:"
+  sudo sed 's/^/[resistack]   /' "${latest}/operation.txt"
+fi
+
+restore_path() {
+  local original="$1"
+  local backup="${latest}/${original#/}"
+  local absent_marker="${latest}/absent/${original#/}"
+  if sudo test -f "${absent_marker}"; then
+    echo "[resistack] remove file created by host-hardening: ${original}"
+    [ "${DRY_RUN}" = "true" ] && return 0
+    sudo rm -f "${original}"
+    return 0
+  fi
+  if sudo test -f "${backup}"; then
+    echo "[resistack] restore file: ${original}"
+    [ "${DRY_RUN}" = "true" ] && return 0
+    sudo mkdir -p "$(dirname "${original}")"
+    sudo cp -a "${backup}" "${original}"
+    return 0
+  fi
+  if sudo test -d "${backup}"; then
+    echo "[resistack] restore directory: ${original}"
+    [ "${DRY_RUN}" = "true" ] && return 0
+    sudo rm -rf "${original}"
+    sudo mkdir -p "$(dirname "${original}")"
+    sudo cp -a "${backup}" "${original}"
+    return 0
+  fi
+  echo "[resistack] backup entry missing for ${original}; skipping" >&2
+}
+
+contains_manifest_path() {
+  local expected="$1"
+  sudo grep -qxF "${expected}" "${latest}/manifest.txt"
+}
+
+service_was_active() {
+  local service="$1"
+  sudo test -f "${latest}/service-state.env" || return 1
+  eval "$(sudo cat "${latest}/service-state.env")"
+  local key="${service}_active"
+  [ "${!key:-}" = "active" ]
+}
+
+service_was_enabled() {
+  local service="$1"
+  sudo test -f "${latest}/service-state.env" || return 1
+  eval "$(sudo cat "${latest}/service-state.env")"
+  local key="${service}_enabled"
+  [ "${!key:-}" = "enabled" ]
+}
+
 while IFS= read -r original; do
   [ -z "${original}" ] && continue
-  backup="${latest}/${original#/}"
-  if [ -f "${backup}" ]; then
-    sudo install -d -m 0700 "$(dirname "${original}")"
-    sudo cp -a "${backup}" "${original}"
-  fi
-done < "${latest}/manifest.txt"
+  restore_path "${original}"
+done < <(sudo cat "${latest}/manifest.txt")
+
+echo "[resistack] remove ResistanceStack-managed sudoers snippets"
+if [ "${DRY_RUN}" != "true" ]; then
+  sudo find /etc/sudoers.d -maxdepth 1 -type f -name 'resistack-*' -exec rm -f {} + 2>/dev/null || true
+fi
 
 restart_ssh_service() {
   sudo systemctl restart ssh >/dev/null 2>&1 || \
@@ -820,11 +931,55 @@ restart_ssh_service() {
   sudo service sshd restart >/dev/null 2>&1 || true
 }
 
-sudo systemctl restart fail2ban || true
-restart_ssh_service
-sudo ufw reload || true
-echo "[resistack] restored host files from ${latest}"
-`, scriptutil.ShellQuote(cfg.HostHardening.BackupDir))
+restore_service_state() {
+  local service="$1"
+  if service_was_enabled "${service}"; then
+    echo "[resistack] ensure service enabled: ${service}"
+    [ "${DRY_RUN}" = "true" ] || sudo systemctl enable "${service}" >/dev/null 2>&1 || true
+  else
+    echo "[resistack] ensure service disabled: ${service}"
+    [ "${DRY_RUN}" = "true" ] || sudo systemctl disable "${service}" >/dev/null 2>&1 || true
+  fi
+  if service_was_active "${service}"; then
+    echo "[resistack] ensure service active: ${service}"
+    [ "${DRY_RUN}" = "true" ] || sudo systemctl start "${service}" >/dev/null 2>&1 || true
+  else
+    echo "[resistack] ensure service stopped: ${service}"
+    [ "${DRY_RUN}" = "true" ] || sudo systemctl stop "${service}" >/dev/null 2>&1 || true
+  fi
+}
+
+if contains_manifest_path /etc/fail2ban/jail.d/resistack-sshd.local; then
+  echo "[resistack] restart affected service: fail2ban"
+  [ "${DRY_RUN}" = "true" ] || sudo systemctl restart fail2ban || true
+  restore_service_state fail2ban
+fi
+
+if contains_manifest_path /etc/ssh/sshd_config; then
+  echo "[resistack] restart affected service: ssh"
+  [ "${DRY_RUN}" = "true" ] || restart_ssh_service
+fi
+
+if contains_manifest_path /etc/ufw; then
+  echo "[resistack] restore ufw service state and reload firewall"
+  if sudo test -f "${latest}/ufw-status-numbered.txt"; then
+    echo "[resistack] previous ufw numbered status:"
+    sudo sed 's/^/[resistack]   /' "${latest}/ufw-status-numbered.txt"
+  fi
+  if sudo test -f "${latest}/ufw-show-added.txt"; then
+    echo "[resistack] previous ufw added rules:"
+    sudo sed 's/^/[resistack]   /' "${latest}/ufw-show-added.txt"
+  fi
+  [ "${DRY_RUN}" = "true" ] || sudo ufw reload || true
+  restore_service_state ufw
+fi
+
+if [ "${DRY_RUN}" = "true" ]; then
+  echo "[resistack] dry-run complete; no host changes were made"
+else
+  echo "[resistack] restored host files and service state from ${latest}"
+fi
+`, scriptutil.ShellQuote(cfg.HostHardening.BackupDir), scriptutil.ShellQuote(boolString(dryRun)))
 }
 
 func boolString(v bool) string {

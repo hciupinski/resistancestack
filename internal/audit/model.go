@@ -25,8 +25,9 @@ type Remediation struct {
 }
 
 type Summary struct {
-	BySeverity  map[string]int `json:"by_severity"`
-	TopSeverity string         `json:"top_severity"`
+	BySeverity    map[string]int `json:"by_severity"`
+	TopSeverity   string         `json:"top_severity"`
+	SecurityScore int            `json:"security_score"`
 }
 
 type Report struct {
@@ -38,8 +39,9 @@ type Report struct {
 }
 
 var severityOrder = map[string]int{
-	config.SeverityLow:      1,
-	config.SeverityMedium:   2,
-	config.SeverityHigh:     3,
-	config.SeverityCritical: 4,
+	config.SeverityNotChecked: 0,
+	config.SeverityLow:        1,
+	config.SeverityMedium:     2,
+	config.SeverityHigh:       3,
+	config.SeverityCritical:   4,
 }

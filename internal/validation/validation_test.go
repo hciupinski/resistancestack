@@ -25,6 +25,29 @@ func TestCheck_InvalidModeReturnsError(t *testing.T) {
 	}
 }
 
+func TestCheck_InvalidDeploymentProfileReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Deployment.Profile = "lamp"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_EmptyDeploymentProfileIsAllowed(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Deployment.Profile = ""
+
+	_, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	if got := cfg.EffectiveDeploymentProfile(); got != config.DeploymentProfileVPSNginx {
+		t.Fatalf("unexpected effective profile %q", got)
+	}
+}
+
 func TestCheck_InvalidCIProviderReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.CI.Provider = "gitlab"
@@ -55,6 +78,16 @@ func TestCheck_InvalidHealthcheckURLReturnsError(t *testing.T) {
 	}
 }
 
+func TestCheck_HTMLReportingFormatIsValid(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.Reporting.Format = config.FormatHTML
+
+	_, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected html reporting format to be valid, got %d errors", len(errs))
+	}
+}
+
 func TestCheck_InvalidSnapshotIntervalReturnsError(t *testing.T) {
 	cfg := config.Default("proj")
 	cfg.Observability.SnapshotInterval = "sometimes"
@@ -82,6 +115,35 @@ func TestCheck_InvalidOperatorAccessModeReturnsError(t *testing.T) {
 	_, errs := Check(cfg)
 	if len(errs) == 0 {
 		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_InvalidSudoModeReturnsError(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.HostHardening.SudoMode = "unbounded"
+
+	_, errs := Check(cfg)
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors")
+	}
+}
+
+func TestCheck_FullSudoModeWarns(t *testing.T) {
+	cfg := config.Default("proj")
+	cfg.HostHardening.SudoMode = config.SudoModeFull
+
+	warnings, errs := Check(cfg)
+	if len(errs) != 0 {
+		t.Fatalf("expected no errors, got %d", len(errs))
+	}
+	found := false
+	for _, warning := range warnings {
+		if warning == "host_hardening.sudo_mode=full grants NOPASSWD:ALL to the deploy user; use only when you accept broad sudo risk" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected full sudo risk warning")
 	}
 }
 

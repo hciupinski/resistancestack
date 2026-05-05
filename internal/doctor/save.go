@@ -1,7 +1,6 @@
-package audit
+package doctor
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,26 +15,24 @@ func Save(root string, cfg config.Config, report Report) (string, error) {
 		dir = filepath.Join(root, dir)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create report directory: %w", err)
+		return "", fmt.Errorf("create doctor report directory: %w", err)
 	}
+
 	format := strings.ToLower(strings.TrimSpace(cfg.Reporting.Format))
-	name := "audit-report.txt"
+	name := "doctor-report.txt"
 	content := []byte(FormatText(report))
-	switch format {
-	case config.FormatJSON:
-		name = "audit-report.json"
-		raw, err := json.MarshalIndent(report, "", "  ")
+	if format == config.FormatJSON {
+		name = "doctor-report.json"
+		raw, err := FormatJSON(report)
 		if err != nil {
-			return "", fmt.Errorf("marshal audit report: %w", err)
+			return "", fmt.Errorf("marshal doctor report: %w", err)
 		}
 		content = raw
-	case config.FormatHTML:
-		name = "audit-report.html"
-		content = []byte(FormatHTML(report))
 	}
+
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, content, 0o644); err != nil {
-		return "", fmt.Errorf("write audit report: %w", err)
+		return "", fmt.Errorf("write doctor report: %w", err)
 	}
 	return path, nil
 }

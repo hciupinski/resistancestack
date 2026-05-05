@@ -2,8 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hciupinski/resistancestack/internal/config"
 )
 
 func TestRun_PrintsUsageWhenNoArgs(t *testing.T) {
@@ -100,12 +104,136 @@ func TestRun_CommandHelpShowsPersistentFlags(t *testing.T) {
 	}
 }
 
-func TestExitCode_MapsNotImplementedToUsageError(t *testing.T) {
-	err := Run([]string{"doctor"}, &bytes.Buffer{}, &bytes.Buffer{})
-	if err == nil {
-		t.Fatal("expected doctor to be not implemented")
+func TestRun_InventoryLocalWorksWithoutConfigOrSSHKey(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
 	}
-	if got := ExitCode(err); got != 2 {
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"inventory", "--local"}, &out, &errOut); err != nil {
+		t.Fatalf("inventory --local: %v; stderr=%s", err, errOut.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{"Areas: repo=checked host=not_checked cloud/external=not_checked", "Host not checked:", "Runtime: unknown"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected local inventory output to contain %q, got %q", want, got)
+		}
+	}
+}
+
+func TestRun_AuditLocalWritesReportWithNotCheckedFindings(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".github", "workflows"), 0o755); err != nil {
+		t.Fatalf("mkdir workflows: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".github", "workflows", "deploy.yml"), []byte("name: deploy\n"), 0o644); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"audit", "--local"}, &out, &errOut); err != nil {
+		t.Fatalf("audit --local: %v; stderr=%s", err, errOut.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{"not_checked: 2", "Host hardening checks were not executed.", "Existing GitHub Actions workflows were found"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected local audit output to contain %q, got %q", want, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".resistack", "reports", "audit-report.txt")); err != nil {
+		t.Fatalf("expected audit report to be written: %v", err)
+	}
+}
+
+func TestRun_AuditLocalOutputHTMLWritesHTMLReport(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"audit", "--local", "--output", "html"}, &out, &errOut); err != nil {
+		t.Fatalf("audit --local --output html: %v; stderr=%s", err, errOut.String())
+	}
+
+	reportPath := filepath.Join(root, ".resistack", "reports", "audit-report.html")
+	raw, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("expected html audit report to be written: %v", err)
+	}
+	text := string(raw)
+	for _, want := range []string{"<!doctype html>", "Security score", "Checked Areas", "Not Checked"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("expected html report to contain %q, got %s", want, text)
+		}
+	}
+	if got := out.String(); !strings.Contains(got, "Saved audit report to ") || !strings.Contains(got, "audit-report.html") {
+		t.Fatalf("expected saved report path in output, got %q", got)
+	}
+}
+
+func TestRun_DoctorLocalWritesReportAndReturnsFailures(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "resistack.yaml")
+	cfg := config.Default("demo")
+	cfg.Server.PrivateKeyPath = filepath.Join(root, "missing-key")
+	cfg.Server.HostKeyChecking = "accept-new"
+	cfg.Reporting.OutputPath = filepath.Join(root, "reports")
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	var out bytes.Buffer
+	err := Run([]string{"doctor", "--local", "--config", configPath}, &out, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected doctor to return failing status")
+	}
+	if got := ExitCode(err); got != 1 {
 		t.Fatalf("unexpected exit code %d", got)
+	}
+	got := out.String()
+	for _, want := range []string{"Status: fail", "Configured private key exists locally.", "Saved doctor report to"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected doctor output to contain %q, got %q", want, got)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "reports", "doctor-report.txt")); err != nil {
+		t.Fatalf("expected doctor report to be written: %v", err)
 	}
 }
