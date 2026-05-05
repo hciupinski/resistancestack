@@ -66,6 +66,8 @@ In the repository:
 
 ## Quick Start
 
+For production brownfield adoption, follow [Safe Adoption on an Existing VPS](docs/SAFE_ADOPTION.md) before applying host changes.
+
 ### Install With Homebrew
 
 Recommended installation uses a dedicated Homebrew tap repository:
