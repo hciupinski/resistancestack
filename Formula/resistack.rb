@@ -4,7 +4,7 @@ class Resistack < Formula
   license "MIT"
 
   url "https://github.com/hciupinski/resistancestack.git", branch: "main"
-  version "0.1.1"
+  version "0.1.2"
   head "https://github.com/hciupinski/resistancestack.git", branch: "main"
 
   depends_on "go" => :build

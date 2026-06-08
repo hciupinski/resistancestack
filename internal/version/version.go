@@ -2,7 +2,7 @@ package version
 
 import "strings"
 
-const fallback = "0.1.1"
+const fallback = "0.1.2"
 
 // Version is overridden by release builds through -ldflags.
 var Version = fallback
