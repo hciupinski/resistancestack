@@ -147,6 +147,16 @@ Supported profiles:
 - `reverse-proxy`: expects an active reverse proxy, but not necessarily Nginx ownership.
 - `node`: checks for Node project evidence such as `package.json`.
 - `dotnet`: checks for .NET project evidence such as `.csproj`.
+- `python`: checks for Python project evidence such as `requirements.txt` or `pyproject.toml`.
+- `fastapi`: checks for FastAPI dependency evidence and configured healthcheck URLs.
+- `django`: checks for Django evidence such as `manage.py`.
+- `php`: checks for PHP project evidence such as `composer.json`.
+- `laravel`: checks for Laravel evidence such as `artisan` or `laravel/framework`.
+- `wordpress`: checks for WordPress evidence such as `wp-config.php`.
+- `static-frontend`: checks for a static `index.html` entrypoint.
+- `small-saas`: checks a baseline SaaS checklist: domains, healthchecks, security CI, and runtime evidence.
+- `apache`: expects Apache ingress.
+- `caddy`: expects Caddy ingress.
 
 If the profile is omitted, ResistanceStack treats it as `vps-nginx` and continues.
 
@@ -286,6 +296,16 @@ This installs a local baseline for:
 
 It preserves `latest.json` on disk for compatibility, but the exposed `observability.panel_bind` address now serves the Grafana UI at `/`.
 
+Projects can deploy application-specific Grafana assets with the baseline by setting `observability.grafana_assets_path` to a local folder. Version 1 supports only `dashboards/**/*.json` and `alerting/**/*.{yaml,yml,json}`; custom datasources and plugins are intentionally not imported.
+
+```text
+observability/grafana/
+  dashboards/
+    business-overview.json
+  alerting/
+    payment-alerts.yaml
+```
+
 Disable it when needed:
 
 ```bash
@@ -352,6 +372,7 @@ Important examples:
 - `observability.panel_bind`: local bind for the Grafana observability view
 - `observability.snapshot_interval`: cadence for Resistack snapshot generation
 - `observability.retention_days`: local Loki retention window in days
+- `observability.grafana_assets_path`: optional local Grafana asset folder with `dashboards/` and `alerting/`
 - `ci.mode`: `warn-only` or `enforced`
 - `ci.github.sarif_upload_mode`: `auto`, `enabled`, or `disabled`
 - `alerts.thresholds`: brute force, bans, nginx errors, restarts, disk, and certificate thresholds

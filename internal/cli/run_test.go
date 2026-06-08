@@ -68,6 +68,60 @@ func TestRun_ObservabilityRequiresSubcommand(t *testing.T) {
 	}
 }
 
+func TestRun_ObservabilityEnableDryRunReportsGrafanaAssets(t *testing.T) {
+	root := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get wd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore wd: %v", err)
+		}
+	})
+
+	cfg := config.Default("demo")
+	cfg.Observability.GrafanaAssetsPath = "observability/grafana"
+	configPath := filepath.Join(root, "resistack.yaml")
+	if err := config.Save(configPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	dashboardPath := filepath.Join(root, "observability", "grafana", "dashboards", "business.json")
+	alertingPath := filepath.Join(root, "observability", "grafana", "alerting", "payments.yaml")
+	if err := os.MkdirAll(filepath.Dir(dashboardPath), 0o755); err != nil {
+		t.Fatalf("mkdir dashboard dir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(alertingPath), 0o755); err != nil {
+		t.Fatalf("mkdir alerting dir: %v", err)
+	}
+	if err := os.WriteFile(dashboardPath, []byte(`{"title":"Business"}`), 0o644); err != nil {
+		t.Fatalf("write dashboard: %v", err)
+	}
+	if err := os.WriteFile(alertingPath, []byte("apiVersion: 1\n"), 0o644); err != nil {
+		t.Fatalf("write alerting: %v", err)
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	if err := Run([]string{"observability", "enable", "--config", configPath, "--dry-run"}, &out, &errOut); err != nil {
+		t.Fatalf("observability enable --dry-run: %v; stderr=%s", err, errOut.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"custom Grafana assets: dashboards=1 alerting=1 files=2",
+		"would deploy Grafana asset alerting/payments.yaml",
+		"would deploy Grafana asset dashboards/business.json",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expected dry-run output to contain %q, got %q", want, got)
+		}
+	}
+}
+
 func TestRun_DeployUserRequiresSubcommand(t *testing.T) {
 	err := Run([]string{"deploy-user"}, &bytes.Buffer{}, &bytes.Buffer{})
 	if err == nil {

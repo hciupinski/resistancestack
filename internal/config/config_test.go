@@ -69,6 +69,7 @@ observability:
   local_data_dir: /var/lib/resistack/observability
   snapshot_interval: 1m
   retention_days: 7
+  grafana_assets_path: ./observability/grafana
 ci:
   provider: github_actions
   generate_workflows: true
@@ -139,6 +140,9 @@ alerts:
 	if cfg.Observability.RetentionDays != 7 {
 		t.Fatalf("unexpected retention days: %d", cfg.Observability.RetentionDays)
 	}
+	if cfg.Observability.GrafanaAssetsPath != "./observability/grafana" {
+		t.Fatalf("unexpected grafana assets path: %q", cfg.Observability.GrafanaAssetsPath)
+	}
 }
 
 func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
@@ -161,7 +165,10 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	if !strings.Contains(text, "strategy: audit_then_apply # Workflow mode. Options: audit_then_apply.") {
 		t.Fatal("expected inline comment for mode.strategy")
 	}
-	if !strings.Contains(text, "profile: vps-nginx # Deployment profile used by wizard and audit. Options: vps-nginx, docker-compose, reverse-proxy, node, dotnet.") {
+	expectedProfileComment := "profile: vps-nginx # Deployment profile used by wizard and audit. Options: " +
+		"vps-nginx, docker-compose, reverse-proxy, node, dotnet, python, fastapi, django, php, laravel, " +
+		"wordpress, static-frontend, small-saas, apache, caddy."
+	if !strings.Contains(text, expectedProfileComment) {
 		t.Fatal("expected inline comment for deployment.profile")
 	}
 	if !strings.Contains(text, "operator_access_mode: public_hardened # SSH operator access strategy. Options: public_hardened, allowlist_only.") {
@@ -169,6 +176,9 @@ func TestEnsureDefaultConfigCreatesCommentedConfig(t *testing.T) {
 	}
 	if !strings.Contains(text, "sudo_mode: limited # Passwordless sudo profile for deploy-user bootstrap. Options: limited, full, manual.") {
 		t.Fatal("expected inline comment for sudo_mode")
+	}
+	if !strings.Contains(text, "grafana_assets_path: \"\" # Optional local folder with Grafana dashboards/ and alerting/ provisioning files deployed with observability.") {
+		t.Fatal("expected inline comment for observability.grafana_assets_path")
 	}
 	if !strings.Contains(text, "auto_issue: false # Automatically issue a missing or expired Let's Encrypt certificate during host hardening.") {
 		t.Fatal("expected inline comment for ssl_certificates.auto_issue")

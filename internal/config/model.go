@@ -30,6 +30,16 @@ const (
 	DeploymentProfileReverseProxy    = "reverse-proxy"
 	DeploymentProfileNode            = "node"
 	DeploymentProfileDotnet          = "dotnet"
+	DeploymentProfilePython          = "python"
+	DeploymentProfileFastAPI         = "fastapi"
+	DeploymentProfileDjango          = "django"
+	DeploymentProfilePHP             = "php"
+	DeploymentProfileLaravel         = "laravel"
+	DeploymentProfileWordPress       = "wordpress"
+	DeploymentProfileStaticFrontend  = "static-frontend"
+	DeploymentProfileSmallSaaS       = "small-saas"
+	DeploymentProfileApache          = "apache"
+	DeploymentProfileCaddy           = "caddy"
 )
 
 type Config struct {
@@ -126,13 +136,14 @@ type AppInventoryConfig struct {
 }
 
 type ObservabilityConfig struct {
-	Enable           bool     `yaml:"enable"`
-	LogSources       []string `yaml:"log_sources,omitempty"`
-	HostMetrics      bool     `yaml:"host_metrics"`
-	PanelBind        string   `yaml:"panel_bind"`
-	LocalDataDir     string   `yaml:"local_data_dir"`
-	SnapshotInterval string   `yaml:"snapshot_interval"`
-	RetentionDays    int      `yaml:"retention_days"`
+	Enable            bool     `yaml:"enable"`
+	LogSources        []string `yaml:"log_sources,omitempty"`
+	HostMetrics       bool     `yaml:"host_metrics"`
+	PanelBind         string   `yaml:"panel_bind"`
+	LocalDataDir      string   `yaml:"local_data_dir"`
+	SnapshotInterval  string   `yaml:"snapshot_interval"`
+	RetentionDays     int      `yaml:"retention_days"`
+	GrafanaAssetsPath string   `yaml:"grafana_assets_path,omitempty"`
 }
 
 type CIConfig struct {

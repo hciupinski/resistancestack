@@ -56,6 +56,10 @@ proxy_kind = "none"
 proxy_notes = []
 if service_state("nginx")["status"] == "active":
     proxy_kind = "nginx"
+elif service_state("apache2")["status"] == "active" or service_state("httpd")["status"] == "active":
+    proxy_kind = "apache"
+elif service_state("caddy")["status"] == "active":
+    proxy_kind = "caddy"
 elif service_state("traefik")["status"] == "active":
     proxy_kind = "traefik"
 else:
@@ -73,7 +77,7 @@ if runtime_kind == "unknown" and docker_active:
     runtime_kind = "plain-docker"
 
 systemd_units = []
-for unit in ("docker", "nginx", "fail2ban"):
+for unit in ("docker", "nginx", "apache2", "httpd", "caddy", "fail2ban"):
     if service_state(unit)["status"] == "active":
         systemd_units.append(unit)
 if runtime_kind == "unknown" and systemd_units:
