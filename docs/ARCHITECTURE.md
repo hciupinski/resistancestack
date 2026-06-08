@@ -1,8 +1,11 @@
-# ResistanceStack Architecture v2
+# ResistanceStack Architecture
 
 ## Product boundary
 
-ResistanceStack v2 is a security baseline platform.
+ResistanceStack is a security baseline platform.
+
+The current released product version is tracked in the repository root
+[`VERSION`](../VERSION) file and injected into release binaries by GoReleaser.
 
 It sits next to an existing application and deployment process.
 It does not own:
@@ -57,7 +60,7 @@ This module does not manage nginx application config or app containers beyond re
 
 ## Control flow
 
-- `init`: creates a v2 baseline config
+- `init`: creates a baseline config
 - `inventory`: collects host and repo state
 - `audit`: evaluates findings and writes a report
 - `apply`: applies selected modules
@@ -95,4 +98,4 @@ The CLI inspects:
 
 ## Legacy scope
 
-Managed deploy capabilities from v1 are legacy only and are intentionally out of the active command model in v2.
+Managed deploy capabilities from earlier internal builds are legacy only and are intentionally out of the active command model.

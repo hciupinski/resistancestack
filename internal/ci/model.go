@@ -11,9 +11,24 @@ type NodeProject struct {
 	Framework string
 }
 
+type PythonProject struct {
+	Path      string
+	Manifest  string
+	Framework string
+}
+
+type PHPProject struct {
+	Path      string
+	Manifest  string
+	Framework string
+}
+
 type TechProfile struct {
 	NodeProjects      []NodeProject
 	DotnetProjects    []string
+	PythonProjects    []PythonProject
+	PHPProjects       []PHPProject
+	StaticSites       []string
 	Dockerfiles       []string
 	ComposeFiles      []string
 	ExistingWorkflows []string

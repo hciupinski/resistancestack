@@ -122,6 +122,25 @@ func collectRepoInfo(root string, cfg config.Config) (RepoInfo, error) {
 	if len(profile.DotnetProjects) > 0 {
 		technologies = append(technologies, ".net")
 	}
+	if len(profile.PythonProjects) > 0 {
+		technologies = append(technologies, "python")
+		for _, project := range profile.PythonProjects {
+			if project.Framework != "python" {
+				technologies = append(technologies, project.Framework)
+			}
+		}
+	}
+	if len(profile.PHPProjects) > 0 {
+		technologies = append(technologies, "php")
+		for _, project := range profile.PHPProjects {
+			if project.Framework != "php" {
+				technologies = append(technologies, project.Framework)
+			}
+		}
+	}
+	if len(profile.StaticSites) > 0 {
+		technologies = append(technologies, "static-frontend")
+	}
 	if len(profile.Dockerfiles) > 0 || len(profile.ComposeFiles) > 0 || len(composeFiles) > 0 {
 		technologies = append(technologies, "docker")
 	}

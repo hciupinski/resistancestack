@@ -79,6 +79,37 @@ func Document(cfg Config) (*yaml.Node, error) {
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("decode config node: %w", err)
 	}
+	ensureDefaultDocumentFields(&doc)
 	annotateDefaultComments(&doc)
 	return &doc, nil
+}
+
+func ensureDefaultDocumentFields(doc *yaml.Node) {
+	if doc == nil || doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return
+	}
+	observability := mappingValue(root, "observability")
+	if observability == nil || observability.Kind != yaml.MappingNode || mappingValue(observability, "grafana_assets_path") != nil {
+		return
+	}
+	observability.Content = append(observability.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "grafana_assets_path"},
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: ""},
+	)
+}
+
+func mappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
 }

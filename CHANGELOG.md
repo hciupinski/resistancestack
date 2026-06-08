@@ -4,6 +4,12 @@ All notable changes to ResistanceStack are documented in this file.
 
 The format follows Keep a Changelog, and releases use semantic versioning.
 
+## [0.1.2] - 2026-06-08
+
+### Added
+
+- Project-scoped observability dashboards for focused ResistanceStack monitoring.
+
 ## [0.1.1] - 2026-05-05
 
 ### Added

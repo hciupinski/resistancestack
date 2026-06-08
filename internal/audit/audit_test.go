@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hciupinski/resistancestack/internal/ci"
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/inventory"
 )
@@ -170,6 +171,95 @@ func TestEvaluate_ReverseProxyProfileFindsMissingProxy(t *testing.T) {
 	}
 }
 
+func TestEvaluate_ExtendedProfileFindings(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   string
+		snapshot  inventory.Snapshot
+		findingID string
+	}{
+		{
+			name:      "python missing project",
+			profile:   config.DeploymentProfilePython,
+			findingID: "deployment.python.project-missing",
+		},
+		{
+			name:    "fastapi missing healthcheck",
+			profile: config.DeploymentProfileFastAPI,
+			snapshot: inventory.Snapshot{
+				Repo: inventory.RepoInfo{
+					TechProfile: ci.TechProfile{
+						PythonProjects: []ci.PythonProject{{Path: ".", Manifest: "requirements.txt", Framework: "fastapi"}},
+					},
+				},
+			},
+			findingID: "deployment.fastapi.healthcheck-missing",
+		},
+		{
+			name:      "django missing project",
+			profile:   config.DeploymentProfileDjango,
+			findingID: "deployment.django.project-missing",
+		},
+		{
+			name:      "php missing project",
+			profile:   config.DeploymentProfilePHP,
+			findingID: "deployment.php.project-missing",
+		},
+		{
+			name:      "laravel missing project",
+			profile:   config.DeploymentProfileLaravel,
+			findingID: "deployment.laravel.project-missing",
+		},
+		{
+			name:      "wordpress missing project",
+			profile:   config.DeploymentProfileWordPress,
+			findingID: "deployment.wordpress.project-missing",
+		},
+		{
+			name:      "static frontend missing entrypoint",
+			profile:   config.DeploymentProfileStaticFrontend,
+			findingID: "deployment.static-frontend.project-missing",
+		},
+		{
+			name:      "small saas checklist incomplete",
+			profile:   config.DeploymentProfileSmallSaaS,
+			findingID: "deployment.small-saas.checklist-incomplete",
+		},
+		{
+			name:      "apache proxy mismatch",
+			profile:   config.DeploymentProfileApache,
+			findingID: "deployment.apache.proxy-mismatch",
+		},
+		{
+			name:      "caddy proxy mismatch",
+			profile:   config.DeploymentProfileCaddy,
+			findingID: "deployment.caddy.proxy-mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Default("demo")
+			cfg.Deployment.Profile = tt.profile
+			cfg.AppInventory.Domains = nil
+			cfg.AppInventory.HealthcheckURLs = nil
+			snapshot := tt.snapshot
+			snapshot.Areas = inventory.Areas{
+				Repo: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+				Host: inventory.AreaStatus{Status: inventory.AreaStatusChecked},
+			}
+			snapshot.Proxy = inventory.ProxyInfo{Kind: "none"}
+			snapshot.UFW = inventory.ServiceState{Enabled: true, Status: "active"}
+			snapshot.Fail2ban = inventory.ServiceState{Enabled: true, Status: "active"}
+			snapshot.PasswordlessSudo = true
+			snapshot.Observability = inventory.ObservabilityInfo{Enabled: true, Status: "active"}
+
+			report := Evaluate(cfg, snapshot)
+			assertFinding(t, report, tt.findingID)
+		})
+	}
+}
+
 func TestSecurityScore_WeightsFindingsAndCapsAtZero(t *testing.T) {
 	score := SecurityScore(Summary{BySeverity: map[string]int{
 		config.SeverityCritical:   1,
@@ -188,6 +278,16 @@ func TestSecurityScore_WeightsFindingsAndCapsAtZero(t *testing.T) {
 	if score != 0 {
 		t.Fatalf("expected score to be capped at zero, got %d", score)
 	}
+}
+
+func assertFinding(t *testing.T, report Report, id string) {
+	t.Helper()
+	for _, finding := range report.Findings {
+		if finding.ID == id {
+			return
+		}
+	}
+	t.Fatalf("expected finding %q, got %#v", id, report.Findings)
 }
 
 func TestEvaluate_FindsMissingPasswordlessSudo(t *testing.T) {

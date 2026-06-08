@@ -58,17 +58,19 @@ GOCACHE=$(pwd)/.cache/go-build GOMODCACHE=$(pwd)/.cache/go-mod go test ./...
 2. Create and push a version tag from the app repo:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+VERSION="v$(cat VERSION)"
+git tag "${VERSION}"
+git push origin "${VERSION}"
 ```
 
 3. Compute the source archive SHA256:
 
 ```bash
-curl -L -o resistack-v0.1.0.tar.gz \
-  https://github.com/hciupinski/resistancestack/archive/refs/tags/v0.1.0.tar.gz
+VERSION="v$(cat VERSION)"
+curl -L -o "resistack-${VERSION}.tar.gz" \
+  "https://github.com/hciupinski/resistancestack/archive/refs/tags/${VERSION}.tar.gz"
 
-shasum -a 256 resistack-v0.1.0.tar.gz
+shasum -a 256 "resistack-${VERSION}.tar.gz"
 ```
 
 4. In `hciupinski/homebrew-resistack`, create or update:
@@ -97,7 +99,7 @@ brew audit --strict --online resistack
 
 ```bash
 git add Formula/resistack.rb
-git commit -m "Update resistack to v0.1.0"
+git commit -m "Update resistack to $(cat VERSION)"
 git push origin main
 ```
 

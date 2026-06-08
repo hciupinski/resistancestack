@@ -8,9 +8,14 @@ import (
 
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/fsutil"
+	"github.com/hciupinski/resistancestack/internal/observability"
 )
 
 func CheckLocal(cfg config.Config, requireSSH bool) (warnings []string, errs []error) {
+	return CheckLocalWithRoot(cfg, "", requireSSH)
+}
+
+func CheckLocalWithRoot(cfg config.Config, root string, requireSSH bool) (warnings []string, errs []error) {
 	if requireSSH {
 		if _, err := exec.LookPath("ssh"); err != nil {
 			errs = append(errs, fmt.Errorf("ssh client not found in PATH"))
@@ -38,6 +43,11 @@ func CheckLocal(cfg config.Config, requireSSH bool) (warnings []string, errs []e
 	}
 	if cfg.Observability.Enable && strings.TrimSpace(cfg.Observability.LocalDataDir) == "" {
 		errs = append(errs, fmt.Errorf("observability.local_data_dir is required when observability.enable=true"))
+	}
+	if cfg.Observability.Enable && strings.TrimSpace(cfg.Observability.GrafanaAssetsPath) != "" {
+		if err := observability.ValidateGrafanaAssetsPath(root, cfg); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	if cfg.Alerts.Enabled && strings.TrimSpace(cfg.Alerts.WebhookURL) == "" && strings.TrimSpace(cfg.Alerts.Email) == "" && strings.TrimSpace(cfg.Alerts.SlackURL) == "" {
 		warnings = append(warnings, "alerts are enabled but no delivery destination is configured")

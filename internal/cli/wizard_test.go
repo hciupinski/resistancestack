@@ -89,6 +89,56 @@ func TestRunWizardCreatesCommentedConfigFromAnswers(t *testing.T) {
 	}
 }
 
+func TestRunWizardAcceptsEveryDeploymentProfile(t *testing.T) {
+	profiles := []string{
+		config.DeploymentProfileVPSNginx,
+		config.DeploymentProfileDockerCompose,
+		config.DeploymentProfileReverseProxy,
+		config.DeploymentProfileNode,
+		config.DeploymentProfileDotnet,
+		config.DeploymentProfilePython,
+		config.DeploymentProfileFastAPI,
+		config.DeploymentProfileDjango,
+		config.DeploymentProfilePHP,
+		config.DeploymentProfileLaravel,
+		config.DeploymentProfileWordPress,
+		config.DeploymentProfileStaticFrontend,
+		config.DeploymentProfileSmallSaaS,
+		config.DeploymentProfileApache,
+		config.DeploymentProfileCaddy,
+	}
+
+	for _, profile := range profiles {
+		t.Run(profile, func(t *testing.T) {
+			input := strings.Join([]string{
+				"demo",
+				profile,
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+				"",
+			}, "\n")
+
+			cfg, err := runConfigWizard(strings.NewReader(input), &bytes.Buffer{}, "demo")
+			if err != nil {
+				t.Fatalf("wizard: %v", err)
+			}
+			if cfg.Deployment.Profile != profile {
+				t.Fatalf("expected profile %q, got %q", profile, cfg.Deployment.Profile)
+			}
+		})
+	}
+}
+
 func TestRunWizardDoesNotOverwriteExistingConfigWithoutForce(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(root, "resistack.yaml")

@@ -16,6 +16,7 @@ import (
 	"github.com/hciupinski/resistancestack/internal/observability"
 	"github.com/hciupinski/resistancestack/internal/stack"
 	"github.com/hciupinski/resistancestack/internal/validation"
+	"github.com/hciupinski/resistancestack/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -29,8 +30,6 @@ const (
 )
 
 var errNotImplemented = errors.New("not implemented")
-
-var Version = "dev"
 
 type rootOptions struct {
 	configPath     string
@@ -60,8 +59,8 @@ func NewRootCommand(out io.Writer, errOut io.Writer) *cobra.Command {
 
 	root := &cobra.Command{
 		Use:           "resistack",
-		Short:         "ResistanceStack v2 CLI",
-		Version:       Version,
+		Short:         "ResistanceStack CLI",
+		Version:       version.Current(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -225,6 +224,16 @@ func runConfigWizard(in io.Reader, out io.Writer, projectName string) (config.Co
 		config.DeploymentProfileReverseProxy,
 		config.DeploymentProfileNode,
 		config.DeploymentProfileDotnet,
+		config.DeploymentProfilePython,
+		config.DeploymentProfileFastAPI,
+		config.DeploymentProfileDjango,
+		config.DeploymentProfilePHP,
+		config.DeploymentProfileLaravel,
+		config.DeploymentProfileWordPress,
+		config.DeploymentProfileStaticFrontend,
+		config.DeploymentProfileSmallSaaS,
+		config.DeploymentProfileApache,
+		config.DeploymentProfileCaddy,
 	})
 	if err != nil {
 		return config.Config{}, err
@@ -416,7 +425,7 @@ func newDoctorCommand(opts *rootOptions, out io.Writer, errOut io.Writer) *cobra
 			if err != nil {
 				return err
 			}
-			report, err := stack.Doctor(ctx.Config, ctx.Root, doctor.Options{Mode: mode, Version: Version}, ctx.Out)
+			report, err := stack.Doctor(ctx.Config, ctx.Root, doctor.Options{Mode: mode, Version: version.Current()}, ctx.Out)
 			if err != nil {
 				return err
 			}
@@ -622,7 +631,7 @@ func newObservabilityCommand(opts *rootOptions, out io.Writer, errOut io.Writer)
 			if err != nil {
 				return err
 			}
-			return observability.Enable(ctx.Config, dryRun, ctx.Out, ctx.ErrOut)
+			return observability.Enable(ctx.Config, ctx.Root, dryRun, ctx.Out, ctx.ErrOut)
 		},
 	}
 	enableCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the observability changes without executing them")

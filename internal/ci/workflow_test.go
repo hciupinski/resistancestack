@@ -43,6 +43,61 @@ func TestDetectTech_MixedRepo(t *testing.T) {
 	}
 }
 
+func TestDetectTech_ExtendedApplicationProfiles(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"api/requirements.txt":        "fastapi==0.115.0\n",
+		"web/manage.py":               "#!/usr/bin/env python\n",
+		"shop/composer.json":          `{"require":{"laravel/framework":"^11.0"}}`,
+		"cms/wp-config.php":           "<?php\n",
+		"public/index.html":           "<!doctype html>\n",
+		"plain/pyproject.toml":        "[project]\nname = \"plain\"\n",
+		"legacy/composer.json":        `{"require":{"php":">=8.2"}}`,
+		"legacy/artisan":              "#!/usr/bin/env php\n",
+		"wordpress/composer.json":     `{"require":{"johnpbloch/wordpress":"^6.6"}}`,
+		"static-site/dist/index.html": "<!doctype html>\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", name, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+
+	profile, err := DetectTech(root)
+	if err != nil {
+		t.Fatalf("detect tech: %v", err)
+	}
+
+	if !hasPythonProject(profile.PythonProjects, "api", "fastapi") {
+		t.Fatalf("expected FastAPI project, got %#v", profile.PythonProjects)
+	}
+	if !hasPythonProject(profile.PythonProjects, "web", "django") {
+		t.Fatalf("expected Django project from manage.py, got %#v", profile.PythonProjects)
+	}
+	if !hasPythonProject(profile.PythonProjects, "plain", "python") {
+		t.Fatalf("expected plain Python project, got %#v", profile.PythonProjects)
+	}
+	if !hasPHPProject(profile.PHPProjects, "shop", "laravel") {
+		t.Fatalf("expected Laravel project, got %#v", profile.PHPProjects)
+	}
+	if !hasPHPProject(profile.PHPProjects, "cms", "wordpress") {
+		t.Fatalf("expected WordPress project, got %#v", profile.PHPProjects)
+	}
+	if !hasPHPProject(profile.PHPProjects, "legacy", "laravel") {
+		t.Fatalf("expected artisan to classify Laravel project, got %#v", profile.PHPProjects)
+	}
+	if !hasPHPProject(profile.PHPProjects, "wordpress", "wordpress") {
+		t.Fatalf("expected composer WordPress project, got %#v", profile.PHPProjects)
+	}
+	if len(profile.StaticSites) != 1 || profile.StaticSites[0] != "public" {
+		t.Fatalf("unexpected static sites: %#v", profile.StaticSites)
+	}
+}
+
 func TestGenerate_CreatesStandaloneSecurityWorkflows(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "ui"), 0o755); err != nil {
@@ -234,6 +289,24 @@ func TestValidate_FindsOutdatedWorkflow(t *testing.T) {
 	if len(result.Outdated) == 0 && len(result.Missing) == 0 {
 		t.Fatal("expected missing or outdated workflows")
 	}
+}
+
+func hasPythonProject(projects []PythonProject, path string, framework string) bool {
+	for _, project := range projects {
+		if project.Path == path && project.Framework == framework {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPHPProject(projects []PHPProject, path string, framework string) bool {
+	for _, project := range projects {
+		if project.Path == path && project.Framework == framework {
+			return true
+		}
+	}
+	return false
 }
 
 func joinWorkflowContent(workflows []WorkflowFile) string {
