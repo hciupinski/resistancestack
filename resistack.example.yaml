@@ -5,7 +5,7 @@ mode:
   strategy: "audit_then_apply" # Workflow mode used by Resistack.
 
 deployment:
-  profile: "vps-nginx" # Deployment profile: vps-nginx, docker-compose, reverse-proxy, node, or dotnet.
+  profile: "vps-nginx" # Deployment profile: vps-nginx, docker-compose, reverse-proxy, node, dotnet, python, fastapi, django, php, laravel, wordpress, static-frontend, small-saas, apache, or caddy.
 
 server:
   host: "1.2.3.4" # Target VPS hostname or IP.
@@ -83,6 +83,7 @@ observability:
   local_data_dir: "/var/lib/resistack/observability" # Storage path for observability data.
   snapshot_interval: "1m" # Interval between local snapshots.
   retention_days: 7 # Log retention window in days.
+  grafana_assets_path: "" # Optional local folder with dashboards/ and alerting/ Grafana files.
 
 ci:
   provider: "github_actions" # CI system used for generated workflows.

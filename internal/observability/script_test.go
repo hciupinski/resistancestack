@@ -21,6 +21,8 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 		`STAGING_DIR="$(mktemp -d /tmp/resistack-observability.`,
 		`${GRAFANA_PROVISIONING}/datasources`,
 		`${GRAFANA_PROVISIONING}/dashboards`,
+		`${GRAFANA_PROVISIONING}/alerting/custom`,
+		`${GRAFANA_DASHBOARDS}/custom`,
 		`OnUnitActiveSec=60s`,
 		`http://${PANEL_HOST}:${PANEL_PORT}/`,
 		"resistack-live-logs",
@@ -31,6 +33,8 @@ func TestBuildEnableScript_DefaultContent(t *testing.T) {
 		`python_extract_zip_binary "${archive}" "alloy,alloy-linux-${arch},alloy-boringcrypto-linux-${arch}"`,
 		`header.startswith(b"\x7fELF")`,
 		`CURRENT_STEP="initializing observability installer"`,
+		`CUSTOM_GRAFANA_ASSETS_ARCHIVE='/tmp/resistack-grafana-assets.tar.gz'`,
+		`log_step "installing custom Grafana assets"`,
 		`log_step "enabling and starting observability services"`,
 		`failed during: %s`,
 	}

@@ -118,7 +118,7 @@ func Doctor(cfg config.Config, root string, opts doctor.Options, out io.Writer) 
 }
 
 func Apply(cfg config.Config, root string, requestedModules []string, dryRun bool, forceWithRiskAcceptance bool, out io.Writer, errOut io.Writer) error {
-	warnings, errs := preflight.CheckLocal(cfg, true)
+	warnings, errs := preflight.CheckLocalWithRoot(cfg, root, true)
 	printWarnings(out, warnings)
 	printErrors(errOut, "preflight error", errs)
 	if len(errs) > 0 {
@@ -146,7 +146,7 @@ func Apply(cfg config.Config, root string, requestedModules []string, dryRun boo
 				return err
 			}
 		case ModuleSecurityObservability:
-			if err := observability.Enable(cfg, dryRun, out, errOut); err != nil {
+			if err := observability.Enable(cfg, root, dryRun, out, errOut); err != nil {
 				return err
 			}
 		case ModuleCISecurity:

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hciupinski/resistancestack/internal/ci"
 	"github.com/hciupinski/resistancestack/internal/config"
 	"github.com/hciupinski/resistancestack/internal/inventory"
 	"github.com/hciupinski/resistancestack/internal/netutil"
@@ -410,6 +411,144 @@ func addProfileFindings(cfg config.Config, snapshot inventory.Snapshot, hostChec
 				AutoRemediable: false,
 			})
 		}
+	case config.DeploymentProfilePython:
+		if len(snapshot.Repo.TechProfile.PythonProjects) == 0 {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.python.project-missing",
+				"The python profile is selected, but no requirements.txt, pyproject.toml, or manage.py file was detected.",
+				"Python-specific dependency and runtime recommendations may not match the repository layout.",
+				"Run the audit from the Python repository root or switch `deployment.profile` to the actual runtime.",
+				add,
+			)
+		}
+	case config.DeploymentProfileFastAPI:
+		if !hasPythonFramework(snapshot.Repo.TechProfile.PythonProjects, "fastapi") {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.fastapi.project-missing",
+				"The fastapi profile is selected, but no FastAPI project evidence was detected.",
+				"FastAPI-specific checks for Python dependencies, ASGI runtime, and health endpoints may not match this repository.",
+				"Add FastAPI to requirements.txt or pyproject.toml, run from the API root, or switch `deployment.profile`.",
+				add,
+			)
+		}
+		if len(cfg.AppInventory.HealthcheckURLs) == 0 {
+			addChecklistFinding(
+				profile,
+				checkedAreas,
+				"deployment.fastapi.healthcheck-missing",
+				"The fastapi profile should declare at least one healthcheck URL.",
+				"Missing healthcheck URLs weaken audit and observability coverage for ASGI services.",
+				"Populate `app_inventory.healthcheck_urls` with the FastAPI health endpoint.",
+				add,
+			)
+		}
+	case config.DeploymentProfileDjango:
+		if !hasPythonFramework(snapshot.Repo.TechProfile.PythonProjects, "django") {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.django.project-missing",
+				"The django profile is selected, but no Django project evidence was detected.",
+				"Django-specific checks for settings, dependencies, and management entrypoints may not match this repository.",
+				"Ensure manage.py is present, run from the Django repository root, or switch `deployment.profile`.",
+				add,
+			)
+		}
+	case config.DeploymentProfilePHP:
+		if len(snapshot.Repo.TechProfile.PHPProjects) == 0 {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.php.project-missing",
+				"The php profile is selected, but no composer.json, artisan, or wp-config.php file was detected.",
+				"PHP-specific dependency and runtime recommendations may not match the repository layout.",
+				"Run the audit from the PHP repository root or switch `deployment.profile` to the actual runtime.",
+				add,
+			)
+		}
+	case config.DeploymentProfileLaravel:
+		if !hasPHPFramework(snapshot.Repo.TechProfile.PHPProjects, "laravel") {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.laravel.project-missing",
+				"The laravel profile is selected, but no Laravel project evidence was detected.",
+				"Laravel-specific checks for Composer dependencies, artisan tasks, and app secrets may not match this repository.",
+				"Ensure artisan or laravel/framework in composer.json is present, run from the Laravel root, or switch `deployment.profile`.",
+				add,
+			)
+		}
+	case config.DeploymentProfileWordPress:
+		if !hasPHPFramework(snapshot.Repo.TechProfile.PHPProjects, "wordpress") {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.wordpress.project-missing",
+				"The wordpress profile is selected, but no WordPress project evidence was detected.",
+				"WordPress-specific checks for wp-config.php and plugin/theme dependency risk may not match this repository.",
+				"Ensure wp-config.php or WordPress Composer evidence is present, run from the WordPress root, or switch `deployment.profile`.",
+				add,
+			)
+		}
+	case config.DeploymentProfileStaticFrontend:
+		if len(snapshot.Repo.TechProfile.StaticSites) == 0 {
+			addRepoEvidenceFinding(
+				profile,
+				checkedAreas,
+				"deployment.static-frontend.project-missing",
+				"The static-frontend profile is selected, but no index.html static site entrypoint was detected.",
+				"Static hosting, cache, and TLS recommendations may not match the repository layout.",
+				"Run the audit from the frontend root or switch `deployment.profile` to the actual runtime.",
+				add,
+			)
+		}
+	case config.DeploymentProfileSmallSaaS:
+		missing := missingSmallSaaSChecklist(cfg, snapshot)
+		if len(missing) > 0 {
+			add(Finding{
+				ID:          "deployment.small-saas.checklist-incomplete",
+				Module:      "inventory-audit",
+				Severity:    config.SeverityMedium,
+				Description: "The small-saas profile checklist is incomplete.",
+				DetectedValue: fmt.Sprintf(
+					"profile=%s missing=%s checked=%s",
+					profile,
+					strings.Join(missing, ","),
+					checkedAreas,
+				),
+				Risk: "A small SaaS deployment without explicit domains, healthchecks, CI security workflows, " +
+					"and runtime evidence has weaker operational security coverage.",
+				Recommendation: "Populate app_inventory domains and healthcheck URLs, generate security CI workflows, " +
+					"and keep runtime evidence in repo or inventory hints.",
+				AutoRemediable: false,
+			})
+		}
+	case config.DeploymentProfileApache:
+		if hostChecked && snapshot.Proxy.Kind != "apache" {
+			addProxyMismatchFinding(
+				profile,
+				"apache",
+				snapshot.Proxy.Kind,
+				checkedAreas,
+				"deployment.apache.proxy-mismatch",
+				add,
+			)
+		}
+	case config.DeploymentProfileCaddy:
+		if hostChecked && snapshot.Proxy.Kind != "caddy" {
+			addProxyMismatchFinding(
+				profile,
+				"caddy",
+				snapshot.Proxy.Kind,
+				checkedAreas,
+				"deployment.caddy.proxy-mismatch",
+				add,
+			)
+		}
 	}
 }
 
@@ -419,11 +558,125 @@ func profileCheckedAreas(profile string, hostChecked bool) string {
 		hostStatus = "host:checked"
 	}
 	switch profile {
-	case config.DeploymentProfileNode, config.DeploymentProfileDotnet:
+	case config.DeploymentProfileNode,
+		config.DeploymentProfileDotnet,
+		config.DeploymentProfilePython,
+		config.DeploymentProfileFastAPI,
+		config.DeploymentProfileDjango,
+		config.DeploymentProfilePHP,
+		config.DeploymentProfileLaravel,
+		config.DeploymentProfileWordPress,
+		config.DeploymentProfileStaticFrontend:
 		return "repo:checked," + hostStatus
 	default:
 		return "repo:checked," + hostStatus + ",cloud/external:not_checked"
 	}
+}
+
+func addRepoEvidenceFinding(
+	profile string,
+	checkedAreas string,
+	id string,
+	description string,
+	risk string,
+	recommendation string,
+	add func(Finding),
+) {
+	add(Finding{
+		ID:             id,
+		Module:         "inventory-audit",
+		Severity:       config.SeverityLow,
+		Description:    description,
+		DetectedValue:  fmt.Sprintf("profile=%s checked=%s", profile, checkedAreas),
+		Risk:           risk,
+		Recommendation: recommendation,
+		AutoRemediable: false,
+	})
+}
+
+func addChecklistFinding(
+	profile string,
+	checkedAreas string,
+	id string,
+	description string,
+	risk string,
+	recommendation string,
+	add func(Finding),
+) {
+	add(Finding{
+		ID:             id,
+		Module:         "inventory-audit",
+		Severity:       config.SeverityMedium,
+		Description:    description,
+		DetectedValue:  fmt.Sprintf("profile=%s checked=%s", profile, checkedAreas),
+		Risk:           risk,
+		Recommendation: recommendation,
+		AutoRemediable: false,
+	})
+}
+
+func addProxyMismatchFinding(
+	profile string,
+	expected string,
+	detected string,
+	checkedAreas string,
+	id string,
+	add func(Finding),
+) {
+	add(Finding{
+		ID:       id,
+		Module:   "inventory-audit",
+		Severity: config.SeverityMedium,
+		Description: fmt.Sprintf(
+			"The %s profile expects %s ingress, but inventory detected a different proxy state.",
+			profile,
+			expected,
+		),
+		DetectedValue: fmt.Sprintf(
+			"profile=%s proxy=%s checked=%s",
+			profile,
+			emptyAsUnknown(detected),
+			checkedAreas,
+		),
+		Risk:           fmt.Sprintf("%s-specific hardening and log assumptions may not match this host.", expected),
+		Recommendation: "Switch `deployment.profile` to the actual ingress model or add the relevant proxy inventory hints.",
+		AutoRemediable: false,
+	})
+}
+
+func hasPythonFramework(projects []ci.PythonProject, framework string) bool {
+	for _, project := range projects {
+		if project.Framework == framework {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPHPFramework(projects []ci.PHPProject, framework string) bool {
+	for _, project := range projects {
+		if project.Framework == framework {
+			return true
+		}
+	}
+	return false
+}
+
+func missingSmallSaaSChecklist(cfg config.Config, snapshot inventory.Snapshot) []string {
+	missing := []string{}
+	if len(cfg.AppInventory.Domains) == 0 {
+		missing = append(missing, "domains")
+	}
+	if len(cfg.AppInventory.HealthcheckURLs) == 0 {
+		missing = append(missing, "healthcheck_urls")
+	}
+	if len(snapshot.Repo.GitHubWorkflows) == 0 || !containsSecurityWorkflow(snapshot.Repo.GitHubWorkflows) {
+		missing = append(missing, "security_workflows")
+	}
+	if snapshot.Runtime.Kind == "" || snapshot.Runtime.Kind == "unknown" {
+		missing = append(missing, "runtime")
+	}
+	return missing
 }
 
 func emptyAsUnknown(value string) string {

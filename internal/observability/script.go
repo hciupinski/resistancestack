@@ -27,6 +27,7 @@ func BuildEnableScript(cfg config.Config) string {
 	fmt.Fprintf(&b, "GRAFANA_DASHBOARDS=%s\n", scriptutil.ShellQuote(paths.grafanaDashboards))
 	fmt.Fprintf(&b, "GRAFANA_PROVISIONING=%s\n", scriptutil.ShellQuote(paths.grafanaProvision))
 	fmt.Fprintf(&b, "GRAFANA_CREDENTIALS=%s\n", scriptutil.ShellQuote(paths.grafanaCreds))
+	fmt.Fprintf(&b, "CUSTOM_GRAFANA_ASSETS_ARCHIVE=%s\n", scriptutil.ShellQuote(grafanaAssetsRemoteArchive))
 	fmt.Fprintf(&b, "LOKI_DATA=%s\n", scriptutil.ShellQuote(paths.lokiData))
 	fmt.Fprintf(&b, "LOKI_CONFIG=%s\n", scriptutil.ShellQuote(paths.lokiConfig))
 	fmt.Fprintf(&b, "ALLOY_DATA=%s\n", scriptutil.ShellQuote(paths.alloyData))
@@ -62,7 +63,7 @@ trap 'rm -rf "${STAGING_DIR}"' EXIT
 
 log_step "ensuring observability directories exist"
 sudo install -d -m 0755 "${DATA_DIR}" "${BIN_DIR}" "${CONFIG_DIR}" "${LOG_DIR}"
-sudo install -d -m 0755 "$(dirname "${GRAFANA_CONFIG}")" "$(dirname "${LOKI_CONFIG}")" "$(dirname "${ALLOY_CONFIG}")" "${GRAFANA_DASHBOARDS}" "${GRAFANA_PROVISIONING}/datasources" "${GRAFANA_PROVISIONING}/dashboards"
+sudo install -d -m 0755 "$(dirname "${GRAFANA_CONFIG}")" "$(dirname "${LOKI_CONFIG}")" "$(dirname "${ALLOY_CONFIG}")" "${GRAFANA_DASHBOARDS}" "${GRAFANA_DASHBOARDS}/custom" "${GRAFANA_PROVISIONING}/datasources" "${GRAFANA_PROVISIONING}/dashboards" "${GRAFANA_PROVISIONING}/alerting" "${GRAFANA_PROVISIONING}/alerting/custom"
 sudo install -d -m 0755 "${GRAFANA_DATA}" "${GRAFANA_LOGS}" "${LOKI_DATA}" "${ALLOY_DATA}"
 
 download() {
@@ -373,6 +374,29 @@ sudo chown -R root:root "${CONFIG_DIR}" "${BIN_DIR}" "${LOG_DIR}"
 		appendHeredoc(&b, tmpPath, dashboard)
 		fmt.Fprintf(&b, "sudo mv %s %s\n\n", scriptutil.ShellQuote(tmpPath), scriptutil.ShellQuote(path.Join(paths.grafanaDashboards, name)))
 	}
+
+	b.WriteString(`log_step "installing custom Grafana assets"
+if [ -f "${CUSTOM_GRAFANA_ASSETS_ARCHIVE}" ]; then
+  CUSTOM_GRAFANA_STAGE="${STAGING_DIR}/custom-grafana-assets"
+  mkdir -p "${CUSTOM_GRAFANA_STAGE}"
+  tar -xzf "${CUSTOM_GRAFANA_ASSETS_ARCHIVE}" -C "${CUSTOM_GRAFANA_STAGE}"
+  sudo rm -rf "${GRAFANA_DASHBOARDS}/custom" "${GRAFANA_PROVISIONING}/alerting/custom"
+  sudo install -d -m 0755 "${GRAFANA_DASHBOARDS}/custom" "${GRAFANA_PROVISIONING}/alerting/custom"
+  if [ -d "${CUSTOM_GRAFANA_STAGE}/dashboards" ]; then
+    sudo cp -R "${CUSTOM_GRAFANA_STAGE}/dashboards/." "${GRAFANA_DASHBOARDS}/custom/"
+  fi
+  if [ -d "${CUSTOM_GRAFANA_STAGE}/alerting" ]; then
+    sudo cp -R "${CUSTOM_GRAFANA_STAGE}/alerting/." "${GRAFANA_PROVISIONING}/alerting/custom/"
+  fi
+  sudo chown -R root:root "${GRAFANA_DASHBOARDS}/custom" "${GRAFANA_PROVISIONING}/alerting/custom"
+  sudo find "${GRAFANA_DASHBOARDS}/custom" "${GRAFANA_PROVISIONING}/alerting/custom" -type d -exec chmod 0755 {} \;
+  sudo find "${GRAFANA_DASHBOARDS}/custom" "${GRAFANA_PROVISIONING}/alerting/custom" -type f -exec chmod 0644 {} \;
+  rm -f "${CUSTOM_GRAFANA_ASSETS_ARCHIVE}"
+else
+  log "no custom Grafana assets archive uploaded"
+fi
+
+`)
 
 	b.WriteString("log_step \"writing snapshot systemd units\"\n")
 	appendHeredoc(&b, "/tmp/resistack-observability-snapshot.service", buildSnapshotService(paths))

@@ -224,6 +224,16 @@ func runConfigWizard(in io.Reader, out io.Writer, projectName string) (config.Co
 		config.DeploymentProfileReverseProxy,
 		config.DeploymentProfileNode,
 		config.DeploymentProfileDotnet,
+		config.DeploymentProfilePython,
+		config.DeploymentProfileFastAPI,
+		config.DeploymentProfileDjango,
+		config.DeploymentProfilePHP,
+		config.DeploymentProfileLaravel,
+		config.DeploymentProfileWordPress,
+		config.DeploymentProfileStaticFrontend,
+		config.DeploymentProfileSmallSaaS,
+		config.DeploymentProfileApache,
+		config.DeploymentProfileCaddy,
 	})
 	if err != nil {
 		return config.Config{}, err
@@ -621,7 +631,7 @@ func newObservabilityCommand(opts *rootOptions, out io.Writer, errOut io.Writer)
 			if err != nil {
 				return err
 			}
-			return observability.Enable(ctx.Config, dryRun, ctx.Out, ctx.ErrOut)
+			return observability.Enable(ctx.Config, ctx.Root, dryRun, ctx.Out, ctx.ErrOut)
 		},
 	}
 	enableCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print the observability changes without executing them")
