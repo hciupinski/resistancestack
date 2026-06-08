@@ -4,7 +4,7 @@
 
 It is built for the common case: one or a few servers, an existing app already running, limited ops capacity, and a need for practical security improvements instead of a large platform rollout.
 
-Current release: `v0.1.1`. The release value is tracked in [`VERSION`](VERSION) and exposed by `resistack --version`.
+Current release: `v0.1.2`. The release value is tracked in [`VERSION`](VERSION) and exposed by `resistack --version`.
 
 ## What You Get
 
